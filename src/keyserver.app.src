@@ -1,0 +1,13 @@
+{application, keyserver,
+ [
+  {description, "Key Server which can be used to encrypt and authenticate participants."},
+  {vsn, "0.0.1"},
+  {mod, {keyserver_app, []}},
+  {modules, [keyserver, keyserver_app, keysever_app_sup, keyserver_sup, keyserver_server]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
