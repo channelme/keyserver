@@ -23,7 +23,9 @@
 -export([
     start_link/0,
     stop/0,
-    start_keyserver/3
+
+    start_keyserver/1,
+    stop_keyserver/1
 ]).
 
 start_link() ->
@@ -37,11 +39,23 @@ stop() ->
         _ -> ok
     end.
 
-start_keyserver(Name, Limit, MFA) ->
+start_keyserver(Name) ->
     ChildSpec = {Name,
-                 {keyserver_sup, start_link, [Name, Limit, MFA]},
+                 {keyserver_sup, start_link, [Name]},
                  permanent, 10000, supervisor, [keyserver_sup]},
     supervisor:start_child(?MODULE, ChildSpec).
+
+stop_keyserver(Name) ->
+    case supervisor:terminate_child(?MODULE, Name) of
+        ok -> 
+            case supervisor:delete_child(?MODULE, Name) of
+                ok -> ok;
+                {error, _} = Error -> Error
+            end;
+        {error, not_found} ->
+            ok
+    end.
+    
 
 init([]) ->
     {ok, {{one_for_one, 6, 3600}, []}}.

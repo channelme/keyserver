@@ -13,3 +13,17 @@ teardown(_) ->
 application_start_stop_test() ->
     ?assertEqual(ok, setup()),
     ?assertEqual(ok, teardown([])).
+
+
+keyserver_test_() ->
+    {setup,
+     fun setup/0,
+     fun teardown/1,
+     [
+      {"Test starting a keyserver", fun() -> 
+                                     {ok, _SupPid} = keyserver:start(test),
+                                     ok = keyserver:stop(test)
+                             end}
+     ]
+    }.
+    
