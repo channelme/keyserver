@@ -21,7 +21,7 @@
 -module(keyserver_server).
 -behaviour(gen_server).
 
--export([start_link/1]).
+-export([start_link/2]).
 
 % gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -29,13 +29,14 @@
 
 
 -record(state, {
+          keypair 
 }).
 
-start_link(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE, [], []).
+start_link(Name, KeyPair) ->
+    gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []).
 
-init([]) ->
-    {ok, #state{}}.
+init([KeyPair]) ->
+    {ok, #state{keypair=KeyPair}}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};

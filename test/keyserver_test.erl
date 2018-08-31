@@ -20,10 +20,10 @@ keyserver_test_() ->
      fun setup/0,
      fun teardown/1,
      [
-      {"Test starting a keyserver", fun() -> 
-                                     {ok, _SupPid} = keyserver:start(test),
-                                     ok = keyserver:stop(test)
-                             end}
+      {"Test starting and stopping a keyserver", fun() -> 
+              {ok, _SupPid} = keyserver:start(test),
+              ok = keyserver:stop(test)
+          end}
      ]
     }.
     

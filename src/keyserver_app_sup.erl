@@ -55,7 +55,6 @@ stop_keyserver(Name) ->
         {error, not_found} ->
             ok
     end.
-    
 
 init([]) ->
     {ok, {{one_for_one, 6, 3600}, []}}.

@@ -26,11 +26,14 @@
 -export([init/1]).
 
 start_link(Name) ->
+    %% Generate a key-pair
     supervisor:start_link(?MODULE, Name).
 
 init(Name) ->
-    %% TODO, the supervisor should create an ets table
+    %% TODO, the supervisor should create an ets table. 
+    KeyPair = crypto:generate_key(rsa, {2048, 65537}, undefined),
+    
     {ok, {{one_for_all, 1, 3600},
           [{keyserver_server,
-            {keyserver_server, start_link, [Name]},
+            {keyserver_server, start_link, [Name, KeyPair]},
             permanent, 5000, worker, [keyserver_server]}]}}.
