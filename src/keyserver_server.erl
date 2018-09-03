@@ -21,7 +21,10 @@
 -module(keyserver_server).
 -behaviour(gen_server).
 
--export([start_link/2]).
+-export([
+    start_link/2,
+    public_enc_key/1
+]).
 
 % gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -29,17 +32,34 @@
 
 
 -record(state, {
-          keypair 
+    public_key,
+    private_key
 }).
 
-start_link(Name, KeyPair) ->
+%%
+%% API
+%%
+
+start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
     gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []).
 
-init([KeyPair]) ->
-    {ok, #state{keypair=KeyPair}}.
+public_enc_key(Name) ->
+    gen_server:call(Name, public_enc_key).
+    
+
+%%
+%% gen_server callbacks
+%%
+
+init([{PublicKey, PrivateKey}]) ->
+    {ok, #state{public_key=PublicKey, private_key=PrivateKey}}.
+
+handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
+    {reply, {ok, PublicKey}, State};
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
+
 handle_call(Msg, _From, State) ->
     {stop, {unknown_call, Msg}, State}.
     

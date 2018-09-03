@@ -22,6 +22,9 @@
 
 -export([start_link/1]).
 
+-define(PUBLIC_MODULUS, 65537).
+-define(MODULUS_SIZE, 2048).
+
 % supervisor callback.
 -export([init/1]).
 
@@ -31,7 +34,7 @@ start_link(Name) ->
 
 init(Name) ->
     %% TODO, the supervisor should create an ets table. 
-    KeyPair = crypto:generate_key(rsa, {2048, 65537}, undefined),
+    KeyPair = crypto:generate_key(rsa, {?MODULUS_SIZE, ?PUBLIC_MODULUS}),
     
     {ok, {{one_for_all, 1, 3600},
           [{keyserver_server,

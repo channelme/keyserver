@@ -23,18 +23,22 @@
     start/1,
     stop/1,
 
+    public_enc_key/1,
     connect_to_keyserver/1,
     session_key_request/1
 ]).
 
+
 start(Name) when is_atom(Name) ->
     keyserver_app_sup:start_keyserver(Name).
 
-
 stop(Name) when is_atom(Name) ->
     keyserver_app_sup:stop_keyserver(Name).
-    
 
+%% Get the public encryption key of the keyserver.
+public_enc_key(Name) when is_atom(Name) ->
+    keyserver_server:public_enc_key(Name).
+    
 connect_to_keyserver(_Pid) ->
     ok.
 

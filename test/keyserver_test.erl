@@ -23,6 +23,12 @@ keyserver_test_() ->
       {"Test starting and stopping a keyserver", fun() -> 
               {ok, _SupPid} = keyserver:start(test),
               ok = keyserver:stop(test)
+          end},
+
+      {"Get the public encryption key from the keyserver", fun() -> 
+              {ok, _SupPid} = keyserver:start(test),
+              {ok, _EncKey} = keyserver:public_enc_key(test),
+              ok = keyserver:stop(test)
           end}
      ]
     }.
