@@ -23,7 +23,8 @@
 
 -export([
     start_link/2,
-    public_enc_key/1
+    public_enc_key/1,
+    connect_to_server/2     
 ]).
 
 % gen_server callbacks
@@ -44,6 +45,9 @@ start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
 
 public_enc_key(Name) ->
     gen_server:call(Name, public_enc_key).
+
+connect_to_server(Name, CipherText) ->
+    gen_server:call(Name, {connect_to_server, CipherText}).
     
 
 %%
@@ -52,6 +56,24 @@ public_enc_key(Name) ->
 
 init([{PublicKey, PrivateKey}]) ->
     {ok, #state{public_key=PublicKey, private_key=PrivateKey}}.
+
+handle_call({connect_to_server, CipherText}, _From, #state{private_key=PrivateKey}=State) ->
+
+    case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
+        <<"hello", EEncKey:256, Nonce:64>> -> 
+
+            ServerNonce = keyserver:generate_nonce(),
+            KeyES = keyserver:generate_key(),
+            Nonce1 = keyserver:inc_nonce(Nonce),
+            
+            Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
+            
+            io:fwrite(standard_error, "~p~n", [Message]),
+
+            {reply, {ok, todo}, State};
+        _ ->
+            {reply, {error, invalid_request}, State}
+    end;
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};

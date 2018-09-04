@@ -24,10 +24,22 @@
     stop/1,
 
     public_enc_key/1,
-    connect_to_keyserver/4,
-    session_key_request/1
+    connect_to_server/4,
+    session_key_request/1,
+         
+    generate_key/0,
+    generate_iv/0,
+    generate_nonce/0,
+         
+    inc_nonce/1
+
 ]).
 
+-define(KEY_BYTES, 32).  %% 256 bits
+-define(NONCE_BYTES, 8). %% 64 bits
+
+-type key() :: <<_:(?KEY_BYTES*8)>>.
+-type nonce() :: <<_:(?NONCE_BYTES*8)>>.
 
 start(Name) when is_atom(Name) ->
     keyserver_app_sup:start_keyserver(Name).
@@ -39,9 +51,40 @@ stop(Name) when is_atom(Name) ->
 public_enc_key(Name) when is_atom(Name) ->
     keyserver_server:public_enc_key(Name).
     
-connect_to_keyserver(Name, Key, Nonce, PubEncKey) ->
-    crypto:public_encrypt(rsa, <<"dit is een test, asdfasf  sdf sad asd f a hallo hallo hallo dfaskfiasfdkasjdfk,asjfajslfjaslfjaslkdjflasdjfasd fs df sadfds f fads sdf saf asfdas f asdf asd fas df daf a  df dssdfgsdfg sdf gsdfgsd g sdg dg sdf gsd g sdg sdf gsdfg 123 132 123 123 1 2313 13 1 3 13 1 3 13  13 123123123 123 13 123 12 31 23 123 1 23 123 13 12 3 13 123 13  dsgdsgdsg dg dfg ds g asfasdf asdf s df asf as f as f asf as df sa f sdf as fd sd f sadf s df sfd safd s df as f asd f as fdasdfsdf sadf s adf sda  fsd fs sd as  as f safdsadfasf asdf asdf a sfd as fas f asd f asfasd fasdfasdfsd fasd f sdf wre rwe r wer we r r wer e e rwew rasdf sadf asd sf afa sdf sd f sdgallo">>, PubEncKey, rsa_pkcs1_oaep_padding).
+-spec connect_to_server(atom(), key(), nonce(), _) -> _.
+connect_to_server(Name, EncKey, Nonce, ServerEncKey) ->
+    ?KEY_BYTES = size(EncKey), % assertion
+    ?NONCE_BYTES = size(Nonce), % assertion
+
+    %{CipherText, CipherTag}=V = crypto:block_encrypt(aes_gcm, Key, IV, {<<"123">>, <<"dit is een test">>}),
+    %R = crypto:block_decrypt(aes_gcm, Key, IV, {<<"123">>, CipherText, CipherTag}),
+    CipherText = crypto:public_encrypt(rsa, <<"hello", EncKey/binary, Nonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding),
+     
+    %% Server handles the request.
+    keyserver_server:connect_to_server(Name, CipherText).
 
 session_key_request(_Pid) ->
     ok.
 
+-spec generate_key() -> key().
+generate_key() ->
+    crypto:strong_rand_bytes(?KEY_BYTES).
+
+-spec generate_iv() -> <<_:128>>.
+generate_iv() ->
+    crypto:strong_rand_bytes(16).
+    
+-spec generate_nonce() -> nonce().
+generate_nonce() ->
+    crypto:strong_rand_bytes(?NONCE_BYTES).
+
+
+-spec inc_nonce(integer() | nonce()) -> nonce().
+inc_nonce(Nonce) when is_binary(Nonce) ->
+    <<N:64>> = Nonce,
+    inc_nonce(N);
+inc_nonce(Nonce) when is_integer(Nonce) ->
+    Nonce1 = Nonce + 1,
+    <<Nonce1:64>>.
+    
+ 

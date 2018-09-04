@@ -27,9 +27,18 @@ keyserver_test_() ->
 
       {"Get the public encryption key from the keyserver", fun() -> 
               {ok, _SupPid} = keyserver:start(test),
-              {ok, EncKey} = keyserver:public_enc_key(test),
+              {ok, ServerEncKey} = keyserver:public_enc_key(test),
+              ok = keyserver:stop(test)
+          end},
+
+      {"Connect to the keyserver", fun() -> 
+              {ok, _SupPid} = keyserver:start(test),
+              {ok, ServerEncKey} = keyserver:public_enc_key(test),
                                                                    
-              X = keyserver:connect_to_keyserver(test, <<"foo">>, <<"test">>, EncKey),
+              Key = keyserver:generate_key(),
+              Nonce = keyserver:generate_nonce(),
+                                                                   
+              X = keyserver:connect_to_server(test, Key, Nonce, ServerEncKey),
                                                                    
               io:fwrite(standard_error, "~p~n", [X]),
 
