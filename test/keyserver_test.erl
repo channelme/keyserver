@@ -27,7 +27,12 @@ keyserver_test_() ->
 
       {"Get the public encryption key from the keyserver", fun() -> 
               {ok, _SupPid} = keyserver:start(test),
-              {ok, _EncKey} = keyserver:public_enc_key(test),
+              {ok, EncKey} = keyserver:public_enc_key(test),
+                                                                   
+              X = keyserver:connect_to_keyserver(test, <<"foo">>, <<"test">>, EncKey),
+                                                                   
+              io:fwrite(standard_error, "~p~n", [X]),
+
               ok = keyserver:stop(test)
           end}
      ]
