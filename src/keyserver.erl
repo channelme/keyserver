@@ -56,8 +56,10 @@ connect_to_server(Name, EncKey, Nonce, ServerEncKey) ->
     ?KEY_BYTES = size(EncKey), % assertion
     ?NONCE_BYTES = size(Nonce), % assertion
 
+
     %{CipherText, CipherTag}=V = crypto:block_encrypt(aes_gcm, Key, IV, {<<"123">>, <<"dit is een test">>}),
     %R = crypto:block_decrypt(aes_gcm, Key, IV, {<<"123">>, CipherText, CipherTag}),
+
     CipherText = crypto:public_encrypt(rsa, <<"hello", EncKey/binary, Nonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding),
      
     %% Server handles the request.
@@ -65,6 +67,10 @@ connect_to_server(Name, EncKey, Nonce, ServerEncKey) ->
 
 session_key_request(_Pid) ->
     ok.
+
+%%
+%% Crypto helpers
+%%
 
 -spec generate_key() -> key().
 generate_key() ->

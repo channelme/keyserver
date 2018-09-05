@@ -38,10 +38,16 @@ keyserver_test_() ->
               Key = keyserver:generate_key(),
               Nonce = keyserver:generate_nonce(),
                                                                    
-              X = keyserver:connect_to_server(test, Key, Nonce, ServerEncKey),
-                                                                   
-              io:fwrite(standard_error, "~p~n", [X]),
+              {ok, Nonce1, IV, CipherTag, CipherText} = keyserver:connect_to_server(test, Key, Nonce, ServerEncKey),
+                                           
+              %% Check the response
+              %%
+              %% Nonce1 should be > Nonce (in this case +1)
+              Nonce1 = keyserver:inc_nonce(Nonce),
 
+              %% And it should be possible to decrypt the response with Key.
+              <<"hello_answer", _/binary>> = crypto:block_decrypt(aes_gcm, Key, IV, {Nonce1, CipherText, CipherTag}),
+                      
               ok = keyserver:stop(test)
           end}
      ]

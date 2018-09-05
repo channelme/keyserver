@@ -60,17 +60,21 @@ init([{PublicKey, PrivateKey}]) ->
 handle_call({connect_to_server, CipherText}, _From, #state{private_key=PrivateKey}=State) ->
 
     case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
-        <<"hello", EEncKey:256, Nonce:64>> -> 
-
+        <<"hello", EEncKey:32/binary, Nonce:64>> -> 
             ServerNonce = keyserver:generate_nonce(),
             KeyES = keyserver:generate_key(),
             Nonce1 = keyserver:inc_nonce(Nonce),
             
             Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
             
-            io:fwrite(standard_error, "~p~n", [Message]),
+            IV = keyserver:generate_iv(),
 
-            {reply, {ok, todo}, State};
+            %% TODO: opslaan van KeyES, de server nonce, en de client nonce
+            
+            {CipherMsg, CipherTag} = crypto:block_encrypt(aes_gcm, EEncKey, IV, {Nonce1, Message}),
+            % Validate with: crypto:block_decrypt(aes_gcm, Key, IV, {ServerNonce, CipherText, CipherTag}),
+
+            {reply, {ok, Nonce1, IV, CipherTag, CipherMsg}, State};
         _ ->
             {reply, {error, invalid_request}, State}
     end;
