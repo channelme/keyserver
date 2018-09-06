@@ -24,7 +24,7 @@
     stop/1,
 
     public_enc_key/1,
-    connect_to_server/4,
+    connect_to_server/5,
     session_key_request/1,
          
     generate_key/0,
@@ -51,19 +51,15 @@ stop(Name) when is_atom(Name) ->
 public_enc_key(Name) when is_atom(Name) ->
     keyserver_server:public_enc_key(Name).
     
--spec connect_to_server(atom(), key(), nonce(), _) -> _.
-connect_to_server(Name, EncKey, Nonce, ServerEncKey) ->
-    ?KEY_BYTES = size(EncKey), % assertion
-    ?NONCE_BYTES = size(Nonce), % assertion
-
-
-    %{CipherText, CipherTag}=V = crypto:block_encrypt(aes_gcm, Key, IV, {<<"123">>, <<"dit is een test">>}),
-    %R = crypto:block_decrypt(aes_gcm, Key, IV, {<<"123">>, CipherText, CipherTag}),
+-spec connect_to_server(atom(), term(), key(), nonce(), _) -> _.
+connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when size(EncKey) =:= ?KEY_BYTES andalso size(Nonce) =:= ?NONCE_BYTES->
+    % {CipherText, CipherTag}=V = crypto:block_encrypt(aes_gcm, Key, IV, {<<"123">>, <<"dit is een test">>}),
+    % R = crypto:block_decrypt(aes_gcm, Key, IV, {<<"123">>, CipherText, CipherTag}),
 
     CipherText = crypto:public_encrypt(rsa, <<"hello", EncKey/binary, Nonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding),
      
     %% Server handles the request.
-    keyserver_server:connect_to_server(Name, CipherText).
+    keyserver_server:connect_to_server(Name, Id, CipherText).
 
 session_key_request(_Pid) ->
     ok.

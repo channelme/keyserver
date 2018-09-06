@@ -38,7 +38,7 @@ keyserver_test_() ->
               Key = keyserver:generate_key(),
               Nonce = keyserver:generate_nonce(),
                                                                    
-              {ok, Nonce1, IV, CipherTag, CipherText} = keyserver:connect_to_server(test, Key, Nonce, ServerEncKey),
+              {ok, Nonce1, IV, CipherTag, CipherText} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
                                            
               %% Check the response
               %%

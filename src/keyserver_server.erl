@@ -24,7 +24,7 @@
 -export([
     start_link/2,
     public_enc_key/1,
-    connect_to_server/2     
+    connect_to_server/3    
 ]).
 
 % gen_server callbacks
@@ -33,7 +33,9 @@
 
 -record(state, {
     public_key,
-    private_key
+    private_key,
+
+    communication_key_table
 }).
 
 %%
@@ -41,13 +43,25 @@
 %%
 
 start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
-    gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []).
+    
+    CommunicationKeyTable = ensure_communication_key_table(Name),
 
+    case gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []) of
+        {ok, Pid} ->
+            true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
+            {ok, Pid};
+        {already_started, Pid} ->
+            true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
+            {already_started, Pid};
+        Else ->
+            Else
+    end.
+     
 public_enc_key(Name) ->
     gen_server:call(Name, public_enc_key).
 
-connect_to_server(Name, CipherText) ->
-    gen_server:call(Name, {connect_to_server, CipherText}).
+connect_to_server(Name, Id, CipherText) ->
+    gen_server:call(Name, {connect_to_server, Id, CipherText}).
     
 
 %%
@@ -57,27 +71,35 @@ connect_to_server(Name, CipherText) ->
 init([{PublicKey, PrivateKey}]) ->
     {ok, #state{public_key=PublicKey, private_key=PrivateKey}}.
 
-handle_call({connect_to_server, CipherText}, _From, #state{private_key=PrivateKey}=State) ->
-
-    case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
-        <<"hello", EEncKey:32/binary, Nonce:64>> -> 
-            ServerNonce = keyserver:generate_nonce(),
-            KeyES = keyserver:generate_key(),
-            Nonce1 = keyserver:inc_nonce(Nonce),
-            
-            Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
-            
-            IV = keyserver:generate_iv(),
-
-            %% TODO: opslaan van KeyES, de server nonce, en de client nonce
-            
-            {CipherMsg, CipherTag} = crypto:block_encrypt(aes_gcm, EEncKey, IV, {Nonce1, Message}),
-            % Validate with: crypto:block_decrypt(aes_gcm, Key, IV, {ServerNonce, CipherText, CipherTag}),
-
-            {reply, {ok, Nonce1, IV, CipherTag, CipherMsg}, State};
+handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=undefined}=State) ->
+    {reply, {error, not_ready}, State};
+handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=PrivateKey, communication_key_table=Table}=State) ->
+    case ets:lookup(Table, Id) of
+        [] ->
+            case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
+                <<"hello", EEncKey:32/binary, Nonce:64>> -> 
+                    ServerNonce = keyserver:generate_nonce(),
+                    KeyES = keyserver:generate_key(),
+                    Nonce1 = keyserver:inc_nonce(Nonce),
+                    
+                    Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
+                    
+                    IV = keyserver:generate_iv(),
+                    
+                    %% TODO: opslaan van KeyES, de server nonce, en de client nonce.
+                    true = ets:insert_new(Table, {Id, KeyES, Nonce1, ServerNonce}),
+                    
+                    {CipherMsg, CipherTag} = crypto:block_encrypt(aes_gcm, EEncKey, IV, {Nonce1, Message}),
+                    % Validate with: crypto:block_decrypt(aes_gcm, Key, IV, {ServerNonce, CipherText, CipherTag}),
+                    
+                    {reply, {ok, Nonce1, IV, CipherTag, CipherMsg}, State};
+                _ ->
+                    {reply, {error, invalid_request}, State}
+            end;
         _ ->
-            {reply, {error, invalid_request}, State}
+            {reply, {error, already_connected}, State}
     end;
+
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};
@@ -91,6 +113,8 @@ handle_call(Msg, _From, State) ->
 handle_cast(Msg, State) ->
     {stop, {unknown_cast, Msg}, State}.   
     
+handle_info({'ETS-TRANSFER', Table, _FromPid, communication_key_table}, State) ->
+    {noreply, State#state{communication_key_table=Table}};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -99,3 +123,22 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+%%
+%% Helpers
+%%
+
+ensure_communication_key_table(Name) ->
+    TableName = communication_key_table_name(Name),
+
+    case ets:info(TableName) of
+        undefined ->
+            ets:new(TableName, [named_table, set, {keypos, 1}, protected, {heir, self(), []}]);
+        _ ->
+            TableName
+    end.
+
+
+           
+communication_key_table_name(Name) ->
+    z_convert:to_atom(z_convert:to_list(Name) ++ "$communication_key_table").

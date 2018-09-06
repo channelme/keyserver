@@ -1,1 +1,4 @@
-[].
+[{<<"zotonic_stdlib">>,
+  {git,"git://github.com/zotonic/z_stdlib.git",
+       {ref,"6d3ff66260b0d195bc8e89774809fe3fadb8a9d7"}},
+  0}].
