@@ -21,6 +21,8 @@
 -module(keyserver_server).
 -behaviour(gen_server).
 
+-include("keyserver.hrl").
+
 -export([
     start_link/2,
     public_enc_key/1,
@@ -78,13 +80,13 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
         [] ->
             case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
                 <<"hello", EEncKey:32/binary, Nonce:64>> -> 
-                    ServerNonce = keyserver:generate_nonce(),
-                    KeyES = keyserver:generate_key(),
-                    Nonce1 = keyserver:inc_nonce(Nonce),
+                    ServerNonce = keyserver_crypto:generate_nonce(),
+                    KeyES = keyserver_crypto:generate_key(),
+                    Nonce1 = keyserver_crypto:inc_nonce(Nonce),
                     
                     Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
                     
-                    IV = keyserver:generate_iv(),
+                    IV = keyserver_crypto:generate_iv(),
                     
                     %% TODO: opslaan van KeyES, de server nonce, en de client nonce.
                     true = ets:insert_new(Table, {Id, KeyES, Nonce1, ServerNonce}),
