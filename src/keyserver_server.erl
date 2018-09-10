@@ -78,23 +78,19 @@ handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=und
 handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=PrivateKey, communication_key_table=Table}=State) ->
     case ets:lookup(Table, Id) of
         [] ->
-            case crypto:private_decrypt(rsa, CipherText, PrivateKey, rsa_pkcs1_oaep_padding) of
-                <<"hello", EEncKey:32/binary, Nonce:64>> -> 
+            case keyserver_crypto:decrypt_hello(CipherText, PrivateKey) of
+                {hello, EEncKey, Nonce} ->
                     ServerNonce = keyserver_crypto:generate_nonce(),
-                    KeyES = keyserver_crypto:generate_key(),
                     Nonce1 = keyserver_crypto:inc_nonce(Nonce),
-                    
-                    Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce1/binary>>,
-                    
+
+                    KeyES = keyserver_crypto:generate_key(),
                     IV = keyserver_crypto:generate_iv(),
-                    
-                    %% TODO: opslaan van KeyES, de server nonce, en de client nonce.
+
+                    %% Store the communication key for later use.
                     true = ets:insert_new(Table, {Id, KeyES, Nonce1, ServerNonce}),
-                    
-                    {CipherMsg, CipherTag} = crypto:block_encrypt(aes_gcm, EEncKey, IV, {Nonce1, Message}),
-                    % Validate with: crypto:block_decrypt(aes_gcm, Key, IV, {ServerNonce, CipherText, CipherTag}),
-                    
-                    {reply, {ok, Nonce1, IV, CipherTag, CipherMsg}, State};
+
+                    CipherMsg = keyserver_crypto:encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce1}, EEncKey, IV),
+                    {reply, {ok, Nonce1, IV, CipherMsg}, State};
                 _ ->
                     {reply, {error, invalid_request}, State}
             end;

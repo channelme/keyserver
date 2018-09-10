@@ -38,7 +38,7 @@ keyserver_test_() ->
               Key = keyserver_crypto:generate_key(),
               Nonce = keyserver_crypto:generate_nonce(),
                                                                    
-              {ok, Nonce1, IV, CipherTag, CipherText} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
+              {ok, Nonce1, IV, CipherText} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
                                            
               %% Check the response
               %%
@@ -46,7 +46,7 @@ keyserver_test_() ->
               Nonce1 = keyserver_crypto:inc_nonce(Nonce),
 
               %% And it should be possible to decrypt the response with Key.
-              <<"hello_answer", _/binary>> = crypto:block_decrypt(aes_gcm, Key, IV, {Nonce1, CipherText, CipherTag}),
+              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(Nonce1, CipherText, Key, IV),
                       
               ok = keyserver:stop(test)
           end},
@@ -61,11 +61,11 @@ keyserver_test_() ->
               BobKey = keyserver_crypto:generate_key(),
               BobNonce = keyserver_crypto:generate_nonce(),
                                                                    
-              {ok, AliceNonce1, IVAlice, AliceCipherTag, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
-              {ok, BobNonce1, IVBob, BobCipherTag, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
+              {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+              {ok, BobNonce1, IVBob, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
 
-              <<"hello_answer", _/binary>> = crypto:block_decrypt(aes_gcm, AliceKey, IVAlice, {AliceNonce1, AliceCipherText, AliceCipherTag}),
-              <<"hello_answer", _/binary>> = crypto:block_decrypt(aes_gcm, BobKey, IVBob, {BobNonce1, BobCipherText, BobCipherTag}),
+              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
+              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(BobNonce1, BobCipherText, BobKey, IVBob),
                
               ok = keyserver:stop(test)
           end}
