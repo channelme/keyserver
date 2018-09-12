@@ -26,7 +26,8 @@
 -export([
     start_link/2,
     public_enc_key/1,
-    connect_to_server/3    
+    connect_to_server/3,  
+    p2p_request/5
 ]).
 
 % gen_server callbacks
@@ -62,8 +63,11 @@ start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
 public_enc_key(Name) ->
     gen_server:call(Name, public_enc_key).
 
-connect_to_server(Name, Id, CipherText) ->
-    gen_server:call(Name, {connect_to_server, Id, CipherText}).
+connect_to_server(Name, Id, Message) ->
+    gen_server:call(Name, {connect_to_server, Id, Message}).
+    
+p2p_request(Name, Id, Nonce, Message, IV) ->
+    gen_server:call(Name, {p2p_request, Id, Nonce, Message, Message, IV}).
     
 
 %%
@@ -97,6 +101,24 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
         _ ->
             {reply, {error, already_connected}, State}
     end;
+
+%  {p2p_request, Id, Nonce, Message, Message, IV}).
+handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+     case ets:lookup(Table, Id) of
+         [] -> {reply, {error, not_found}, State};
+         [{Id, KeyES, StoredNonce, ServerNonce}] ->
+             
+             % Now, the stored nonce must be somewhat smaller than the received nonce. 
+             io:fwrite(standard_error, "TEST NONCE!!!"),
+
+             case keyserver_crypto:decrypt_p2p_request(Nonce, Message, KeyES, IV) of
+                 {p2p_request, OtherId, EncryptedNonce} ->
+                     io:fwrite(standard_error, "Got message"),
+                     ok; 
+                 Error ->
+                     Error
+             end
+     end;
 
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->

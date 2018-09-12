@@ -25,7 +25,8 @@
 
     public_enc_key/1,
     connect_to_server/5,
-    session_key_request/1
+
+    p2p_request/5
 ]).
 
 -include("keyserver.hrl").
@@ -47,7 +48,13 @@ connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when size(EncKey) =:= ?
     %% Server handles the request.
     keyserver_server:connect_to_server(Name, Id, Message).
 
-session_key_request(_Pid) ->
+%% Request a communication key for another party.
+p2p_request(Name, Id, OtherId, Nonce, Key) when size(Nonce) =:= ?NONCE_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+    IV = keyserver_crypto:generate_iv(),
+    Message = keyserver_crypto:encrypt_p2p_request(Id, OtherId, Nonce, Key, IV),
+    keyserver_server:p2p_request(Name, Id, Nonce, Message, IV).
+
+secure_publish(_Id, _Topic, _Nonce, _CommunicationKey) ->
     ok.
 
- 
+

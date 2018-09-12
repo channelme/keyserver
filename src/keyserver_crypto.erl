@@ -31,7 +31,9 @@
     decrypt_hello/2,
 
     encrypt_hello_answer/3,
-    decrypt_hello_answer/4
+    decrypt_hello_answer/4,
+
+    encrypt_p2p_request/5
 ]).
 
 -include("keyserver.hrl").
@@ -66,6 +68,9 @@ inc_nonce(Nonce) when is_integer(Nonce) ->
     Nonce1 = Nonce + 1,
     <<Nonce1:64>>.
 
+%%
+%% Hello
+%%
 
 encrypt_hello(EncKey, Nonce, ServerEncKey) ->
     crypto:public_encrypt(rsa, 
@@ -82,22 +87,38 @@ encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, EncKey, IV) ->
     <<Tag/binary, $:, Msg/binary>>.
 
 decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
-    <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> = Message,
-    case Message of
-        <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
-            Plain = crypto:block_decrypt(aes_gcm, EncKey, IV, {Nonce, Msg, Tag}),
-            case Plain of
-                <<"hello_answer", KeyES:?KEY_BYTES/binary, SNonce:?NONCE_BYTES/binary, Nonce:?NONCE_BYTES/binary>> -> 
-                    {hello_answer, KeyES, SNonce, Nonce};
-                _ ->
-                    {error, plain_msg}
-            end;
-        _ ->
-           {error, cipher_msg}
+    case decrypt_message(Message, Nonce, EncKey, IV) of
+        <<"hello_answer", KeyES:?KEY_BYTES/binary, SNonce:?NONCE_BYTES/binary, Nonce:?NONCE_BYTES/binary>> -> 
+            {hello_answer, KeyES, SNonce, Nonce};
+        Bin when is_binary(Bin) -> {error, plain_msg};
+        {error, _}=E -> E
     end.
     
+%%
+%% p2p requests
+%%
     
+encrypt_p2p_request(Id, OtherId, Nonce, Key, IV) ->
+    Message = <<"p2p_request", Nonce/binary, OtherId/binary>>,
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Nonce, Message, ?AES_GCM_TAG_SIZE}),
+    <<Tag/binary, $:, Msg/binary>>.
 
-%decrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, Key, IV) ->
-%
-%    <<"hello_answer", _/binary>> = crypto:block_decrypt(aes_gcm, AliceKey, IVAlice, {AliceNonce1, AliceCipherText, AliceCipherTag}).
+decrypt_p2p_request(Nonce, Message, Key, IV) ->
+    case decrypt_message(Message, Nonce, Key, IV) of
+        <<"p2p_request", Nonce:?NONCE_BYTES/binary, OtherId/binary>> ->
+            {p2p_request, OtherId, Nonce};
+        Bin when is_binary(Bin) -> {error, plain_msg};
+        {error, _}=E -> E
+    end.
+    
+       
+%%
+%% Helpers
+%%
+            
+decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV) when size(Nonce) =:= ?NONCE_BYTES andalso size(Key) =:= ?KEY_BYTES->
+    crypto:block_decrypt(aes_gcm, Key, IV, {Nonce, Msg, Tag});
+decrypt_message(_Msg, _Nonce, _Key, _IV) ->
+    {error, cipher_msg}.
+
+
