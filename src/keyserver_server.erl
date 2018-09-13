@@ -67,7 +67,7 @@ connect_to_server(Name, Id, Message) ->
     gen_server:call(Name, {connect_to_server, Id, Message}).
     
 p2p_request(Name, Id, Nonce, Message, IV) ->
-    gen_server:call(Name, {p2p_request, Id, Nonce, Message, Message, IV}).
+    gen_server:call(Name, {p2p_request, Id, Nonce, Message, IV}).
     
 
 %%
@@ -105,21 +105,27 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
 %  {p2p_request, Id, Nonce, Message, Message, IV}).
 handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
      case ets:lookup(Table, Id) of
-         [] -> {reply, {error, not_found}, State};
+         [] -> 
+             {reply, {error, not_found}, State};
          [{Id, KeyES, StoredNonce, ServerNonce}] ->
              
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
-             io:fwrite(standard_error, "TEST NONCE!!!"),
+             io:fwrite(standard_error, "TEST NONCE!!!~n", []),
 
              case keyserver_crypto:decrypt_p2p_request(Nonce, Message, KeyES, IV) of
-                 {p2p_request, OtherId, EncryptedNonce} ->
-                     io:fwrite(standard_error, "Got message"),
-                     ok; 
-                 Error ->
-                     Error
+                 {p2p_request, IdHash, OtherId, EncryptedNonce} ->
+                     case check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) of
+                         ok ->
+                             %% Generate a key, and encrypt a ticket for Id, and OtherId
+                             %% Add a timestamp for max validity period.
+                             io:fwrite(standard_error, "We can create reply~n", []),
+
+                             {reply, {ok, todo}, State};
+                         {error, _}=Error->
+                             {reply, Error, State}
+                     end
              end
      end;
-
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};
@@ -147,6 +153,42 @@ terminate(_Reason, _State) ->
 %%
 %% Helpers
 %%
+
+check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) ->
+    check_all([
+               fun() -> check_hash(Id, IdHash) end,
+               fun() -> check_equal(Nonce, EncryptedNonce) end,
+               fun() -> check_allowed(communicate, Id, OtherId) end
+              ]).
+
+check_all([]) -> ok;
+check_all([Check|Rest]) ->
+    case Check() of
+        ok -> check_all(Rest);
+        error -> error;
+        {error, _}=E -> E
+    end.
+
+check_allowed(communicate, A, B) ->
+    %% how am I going to do this?
+    io:fwrite(standard_error, "TODO: communicate check: ~p, ~p ~n", [A, B]),
+    ok.
+
+-spec check_equal(term(), term()) -> ok | {error, not_equal}.
+check_equal(A, B) ->
+    case A =:= B of
+        true -> ok;
+        false -> {error, not_equal}
+    end.
+
+-spec check_hash(iodata(), binary()) -> ok | {error, hash_not_equal}.
+check_hash(Value, Hash) when is_binary(Hash) andalso size(Hash) =:= ?HASH_BYTES ->
+    ComputedHash = keyserver_crypto:hash(Value),
+    case ComputedHash =:= Hash of
+        true -> ok;
+        false -> {error, hash_not_equal}
+    end.
+    
 
 ensure_communication_key_table(Name) ->
     TableName = communication_key_table_name(Name),

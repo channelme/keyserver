@@ -24,6 +24,8 @@
     generate_key/0,
     generate_iv/0,
     generate_nonce/0,
+         
+    hash/1,
 
     inc_nonce/1,
 
@@ -33,17 +35,20 @@
     encrypt_hello_answer/3,
     decrypt_hello_answer/4,
 
-    encrypt_p2p_request/5
+    encrypt_p2p_request/5,
+    decrypt_p2p_request/4
 ]).
 
 -include("keyserver.hrl").
 
 -type key() :: <<_:(?KEY_BYTES*8)>>.
 -type nonce() :: <<_:(?NONCE_BYTES*8)>>.
+-type hash() :: <<_:(?HASH_BYTES*8)>>.
 
 -export_type([
     key/0,
-    nonce/0
+    nonce/0,
+    hash/0
 ]).
 
 
@@ -67,6 +72,11 @@ inc_nonce(Nonce) when is_binary(Nonce) ->
 inc_nonce(Nonce) when is_integer(Nonce) ->
     Nonce1 = Nonce + 1,
     <<Nonce1:64>>.
+
+-spec hash(iodata()) -> hash().
+hash(Data) ->
+    crypto:hash(sha256, Data).
+    
 
 %%
 %% Hello
@@ -98,15 +108,16 @@ decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
 %% p2p requests
 %%
     
-encrypt_p2p_request(Id, OtherId, Nonce, Key, IV) ->
-    Message = <<"p2p_request", Nonce/binary, OtherId/binary>>,
+encrypt_p2p_request(Id, OtherId, Nonce, Key, IV) when is_binary(Id) andalso is_binary(OtherId) ->
+    IdHash = keyserver_crypto:hash(Id),
+    Message = <<"p2p_request", Nonce/binary, IdHash/binary, OtherId/binary>>,
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Nonce, Message, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
 decrypt_p2p_request(Nonce, Message, Key, IV) ->
     case decrypt_message(Message, Nonce, Key, IV) of
-        <<"p2p_request", Nonce:?NONCE_BYTES/binary, OtherId/binary>> ->
-            {p2p_request, OtherId, Nonce};
+        <<"p2p_request", Nonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, OtherId/binary>> ->
+            {p2p_request, IdHash, OtherId, Nonce};
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=E -> E
     end.

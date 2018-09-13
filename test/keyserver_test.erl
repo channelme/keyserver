@@ -46,7 +46,7 @@ keyserver_test_() ->
               Nonce1 = keyserver_crypto:inc_nonce(Nonce),
 
               %% And it should be possible to decrypt the response with Key.
-              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(Nonce1, CipherText, Key, IV),
+              {hello_answer, _KeyES, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(Nonce1, CipherText, Key, IV),
                       
               ok = keyserver:stop(test)
           end},
@@ -64,9 +64,13 @@ keyserver_test_() ->
               {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
               {ok, BobNonce1, IVBob, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
 
-              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
-              {hello_answer, _, _, _} = keyserver_crypto:decrypt_hello_answer(BobNonce1, BobCipherText, BobKey, IVBob),
+              {hello_answer, KeyAliceServer, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
+              {hello_answer, KeyBobServer, _, _} = keyserver_crypto:decrypt_hello_answer(BobNonce1, BobCipherText, BobKey, IVBob),
+                                       
+              keyserver:p2p_request(test, "alice", "bob", AliceNonce1, KeyAliceServer),
+
                
+
               ok = keyserver:stop(test)
           end}
 

@@ -42,17 +42,22 @@ public_enc_key(Name) when is_atom(Name) ->
     keyserver_server:public_enc_key(Name).
     
 -spec connect_to_server(atom(), term(), keyserver_crypto:key(), keyserver_crypto:nonce(), _) -> _.
-connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when size(EncKey) =:= ?KEY_BYTES andalso size(Nonce) =:= ?NONCE_BYTES->
+connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) andalso size(EncKey) =:= ?KEY_BYTES andalso size(Nonce) =:= ?NONCE_BYTES->
     Message = keyserver_crypto:encrypt_hello(EncKey, Nonce, ServerEncKey),
      
     %% Server handles the request.
-    keyserver_server:connect_to_server(Name, Id, Message).
+    keyserver_server:connect_to_server(Name, Id, Message);
+connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) ->
+    connect_to_server(Name, z_convert:to_binary(Id), EncKey, Nonce, ServerEncKey).
+    
 
 %% Request a communication key for another party.
-p2p_request(Name, Id, OtherId, Nonce, Key) when size(Nonce) =:= ?NONCE_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+p2p_request(Name, Id, OtherId, Nonce, Key) when is_binary(Id) andalso is_binary(OtherId) andalso size(Nonce) =:= ?NONCE_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
     Message = keyserver_crypto:encrypt_p2p_request(Id, OtherId, Nonce, Key, IV),
-    keyserver_server:p2p_request(Name, Id, Nonce, Message, IV).
+    keyserver_server:p2p_request(Name, Id, Nonce, Message, IV);
+p2p_request(Name, Id, OtherId, Nonce, Key) ->
+    p2p_request(Name, z_convert:to_binary(Id), z_convert:to_binary(OtherId), Nonce, Key).
 
 secure_publish(_Id, _Topic, _Nonce, _CommunicationKey) ->
     ok.
