@@ -78,10 +78,6 @@ unix_time_known_times_test() ->
 unix_time_to_datetime_test() ->
     ?assertEqual({{1970,1,1}, {0,0,0}}, unix_time_to_datetime(0)),
     ?assertEqual({{1970, 11, 8}, {9,0,0}}, unix_time_to_datetime(26902800)),
-    
     ok.
-
-    
-
 
 -endif.

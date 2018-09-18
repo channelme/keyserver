@@ -19,6 +19,7 @@
 -author("Maas-Maarten Zeeman <maas@channel.me>").
 
 -define(AES_GCM_TAG_SIZE, 16). % The security of GCM depends on the tag size , so we use the full 128 bits.
+-define(MAX_NONCE, ((1 bsl 64) -1)).
 
 -export([
     generate_key/0,
@@ -28,6 +29,7 @@
     hash/1,
 
     inc_nonce/1,
+         
 
     encrypt_hello/3,
     decrypt_hello/2,
@@ -70,11 +72,21 @@ generate_nonce() ->
 
 -spec inc_nonce(integer() | nonce()) -> nonce().
 inc_nonce(Nonce) when is_binary(Nonce) ->
-    <<N:64>> = Nonce,
-    inc_nonce(N);
+    inc_nonce(decode_nonce(Nonce));
 inc_nonce(Nonce) when is_integer(Nonce) ->
-    Nonce1 = Nonce + 1,
-    <<Nonce1:64>>.
+    (Nonce + 1) rem ?MAX_NONCE.
+
+% Decode Nonce binary value into an integer.
+decode_nonce(<<Nonce:64>>) -> 
+    Nonce;
+decode_nonce(Nonce) when Nonce >= 0 andalso Nonce < ?MAX_NONCE -> 
+    Nonce.
+    
+% Encode a nonce into a 64 bit binary value.
+encode_nonce(<<_:64>>=Nonce) -> Nonce;
+encode_nonce(Nonce) when Nonce >= 0 andalso Nonce < ?MAX_NONCE -> 
+    <<Nonce:64>>.
+
 
 -spec hash(iodata()) -> hash().
 hash(Data) ->
@@ -86,23 +98,26 @@ hash(Data) ->
 %%
 
 encrypt_hello(EncKey, Nonce, ServerEncKey) ->
+    EncNonce = encode_nonce(Nonce),
     crypto:public_encrypt(rsa, 
-        <<"hello", EncKey/binary, Nonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
+        <<"hello", EncKey/binary, EncNonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
 
 decrypt_hello(Message, PrivateKey) ->
     <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> =
         crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding),
-    {hello, EEncKey, Nonce}.
+    {hello, EEncKey, decode_nonce(Nonce)}.
 
 encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, EncKey, IV) ->
-    Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, Nonce/binary>>,
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {Nonce, Message, ?AES_GCM_TAG_SIZE}),
+    EncNonce = encode_nonce(Nonce),
+    Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, EncNonce/binary>>,
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
 decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
-    case decrypt_message(Message, Nonce, EncKey, IV) of
-        <<"hello_answer", KeyES:?KEY_BYTES/binary, SNonce:?NONCE_BYTES/binary, Nonce:?NONCE_BYTES/binary>> -> 
-            {hello_answer, KeyES, SNonce, Nonce};
+    EncNonce = encode_nonce(Nonce),
+    case decrypt_message(Message, EncNonce, EncKey, IV) of
+        <<"hello_answer", KeyES:?KEY_BYTES/binary, SNonce:?NONCE_BYTES/binary, EncNonce:?NONCE_BYTES/binary>> -> 
+            {hello_answer, KeyES, decode_nonce(SNonce), decode_nonce(EncNonce)};
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=E -> E
     end.
@@ -113,26 +128,26 @@ decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
     
 encrypt_p2p_request(Id, OtherId, Nonce, Key, IV) when is_binary(Id) andalso is_binary(OtherId) ->
     IdHash = keyserver_crypto:hash(Id),
-    Message = <<"p2p_request", Nonce/binary, IdHash/binary, OtherId/binary>>,
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Nonce, Message, ?AES_GCM_TAG_SIZE}),
+    EncNonce = encode_nonce(Nonce),
+    Message = <<"p2p_request", EncNonce/binary, IdHash/binary, OtherId/binary>>,
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
 decrypt_p2p_request(Nonce, Message, Key, IV) ->
     case decrypt_message(Message, Nonce, Key, IV) of
-        <<"p2p_request", Nonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, OtherId/binary>> ->
-            {p2p_request, IdHash, OtherId, Nonce};
+        <<"p2p_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, OtherId/binary>> ->
+            {p2p_request, IdHash, OtherId, decode_nonce(EncNonce)};
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=E -> E
     end.
-    
        
 %%
 %% Helpers
 %%
             
-decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV) when size(Nonce) =:= ?NONCE_BYTES andalso size(Key) =:= ?KEY_BYTES->
-    crypto:block_decrypt(aes_gcm, Key, IV, {Nonce, Msg, Tag});
+decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV) when size(Key) =:= ?KEY_BYTES->
+    EncNonce = encode_nonce(Nonce),
+    crypto:block_decrypt(aes_gcm, Key, IV, {EncNonce, Msg, Tag});
 decrypt_message(_Msg, _Nonce, _Key, _IV) ->
     {error, cipher_msg}.
-
 
