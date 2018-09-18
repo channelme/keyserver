@@ -45,9 +45,12 @@
 -type nonce() :: <<_:(?NONCE_BYTES*8)>>.
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
 
+-type timestamp() :: <<_:(?HASH_BYTES*8)>>.
+
 -export_type([
     key/0,
     nonce/0,
+    timestamp/0,
     hash/0
 ]).
 

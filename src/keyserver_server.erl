@@ -120,6 +120,23 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              %% Add a timestamp for max validity period.
                              io:fwrite(standard_error, "We can create reply~n", []),
 
+                             %% Generate a key.
+                             K_AB = keyserver_crypto:generate_key(),
+
+                             %% Timestamp
+                             %Timestamp = keyserver_crypto:timestamp(), %% 64 bit.
+
+                             %% Lifetime
+                             %Lifetime = keyserver_crypto:lifetime(3600), % 16 bit, one hour (todo, make variable)
+                             
+                             %% Increase Nonce server
+                             ServerNonce1 = keyserver_crypto:inc_nonce(ServerNonce),
+
+                             %% Lookup communication key of B
+                             %% Create ticket for Other, encrypt under B key
+
+                             %% Create reply encrypt under KeyES
+
                              {reply, {ok, todo}, State};
                          {error, _}=Error->
                              {reply, Error, State}
