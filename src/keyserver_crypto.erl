@@ -90,7 +90,7 @@ encrypt_hello(EncKey, Nonce, ServerEncKey) ->
         <<"hello", EncKey/binary, Nonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
 
 decrypt_hello(Message, PrivateKey) ->
-    <<"hello", EEncKey:32/binary, Nonce:8/binary>> =
+    <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> =
         crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding),
     {hello, EEncKey, Nonce}.
 
