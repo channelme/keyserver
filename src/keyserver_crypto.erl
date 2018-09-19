@@ -38,20 +38,28 @@
     decrypt_hello_answer/4,
 
     encrypt_p2p_request/5,
-    decrypt_p2p_request/4
+    decrypt_p2p_request/4,
+         
+    encrypt_p2p_response/5,
+         
+    create_p2p_ticket/5
+
 ]).
 
 -include("keyserver.hrl").
 
+-type nonce() :: 0..?MAX_NONCE.
 -type key() :: <<_:(?KEY_BYTES*8)>>.
--type nonce() :: <<_:(?NONCE_BYTES*8)>>.
+-type pub_enc_key() :: crypto:rsa_public().
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
+-type encoded_nonce() :: <<_:(?NONCE_BYTES*8)>>.
 
 -type timestamp() :: <<_:(?HASH_BYTES*8)>>.
 
 -export_type([
     key/0,
     nonce/0,
+    encoded_nonce/0,
     timestamp/0,
     hash/0
 ]).
@@ -67,10 +75,10 @@ generate_iv() ->
     
 -spec generate_nonce() -> nonce().
 generate_nonce() ->
-    crypto:strong_rand_bytes(?NONCE_BYTES).
+    decode_nonce(crypto:strong_rand_bytes(?NONCE_BYTES)).
 
 
--spec inc_nonce(integer() | nonce()) -> nonce().
+-spec inc_nonce(encoded_nonce() | nonce()) -> nonce().
 inc_nonce(Nonce) when is_binary(Nonce) ->
     inc_nonce(decode_nonce(Nonce));
 inc_nonce(Nonce) when is_integer(Nonce) ->
@@ -97,6 +105,7 @@ hash(Data) ->
 %% Hello
 %%
 
+-spec encrypt_hello(key(), nonce(), pub_enc_key()) -> binary(). 
 encrypt_hello(EncKey, Nonce, ServerEncKey) ->
     EncNonce = encode_nonce(Nonce),
     crypto:public_encrypt(rsa, 
@@ -109,7 +118,8 @@ decrypt_hello(Message, PrivateKey) ->
 
 encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, EncKey, IV) ->
     EncNonce = encode_nonce(Nonce),
-    Message = <<"hello_answer", KeyES/binary, ServerNonce/binary, EncNonce/binary>>,
+    EncServerNonce = encode_nonce(ServerNonce),
+    Message = <<"hello_answer", KeyES/binary, EncServerNonce/binary, EncNonce/binary>>,
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
@@ -121,7 +131,15 @@ decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=E -> E
     end.
-    
+
+
+% -spec create_p2p_ticket() -> p2p_ticket().
+create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
+    Ticket = <<Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer, OtherId/binary>>,
+    IV = keyserver_crypto:generate_iv(),
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {OtherId, Ticket, ?AES_GCM_TAG_SIZE}),
+    <<"p2p-ticket", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
+
 %%
 %% p2p requests
 %%
@@ -140,10 +158,22 @@ decrypt_p2p_request(Nonce, Message, Key, IV) ->
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=E -> E
     end.
-       
+
+encrypt_p2p_response(Nonce, TicketA, TicketB, Key, IV) ->
+    EncNonce = encode_nonce(Nonce),
+    TA = length_prefix(TicketA),
+    TB = length_prefix(TicketB),
+    Message = <<"p2p_response", EncNonce:?NONCE_BYTES/binary, TA/binary, TB/binary>>,
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
+    <<Tag/binary, $:, Msg/binary>>.
+
 %%
 %% Helpers
 %%
+
+length_prefix(Bin) when size(Bin) =< 255 ->
+    S = size(Bin),
+    <<S:8/unsigned-integer, Bin/binary>>.
             
 decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV) when size(Key) =:= ?KEY_BYTES->
     EncNonce = encode_nonce(Nonce),

@@ -124,20 +124,24 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              K_AB = keyserver_crypto:generate_key(),
 
                              %% Timestamp
-                             %Timestamp = keyserver_crypto:timestamp(), %% 64 bit.
+                             Timestamp = keyserver_utils:unix_time(), %% 64 bit integer.
 
                              %% Lifetime
-                             %Lifetime = keyserver_crypto:lifetime(3600), % 16 bit, one hour (todo, make variable)
+                             Lifetime = 3600, % in seconds one hour (todo, make variable)
                              
                              %% Increase Nonce server
                              ServerNonce1 = keyserver_crypto:inc_nonce(ServerNonce),
 
                              %% Lookup communication key of B
                              %% Create ticket for Other, encrypt under B key
+                             TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
+                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyES), % <-- klopt nog niet
 
                              %% Create reply encrypt under KeyES
+                             IV1 = keyserver_crypto:generate_iv(),
+                             Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
 
-                             {reply, {ok, todo}, State};
+                             {reply, {ok, Reply, IV}, State};
                          {error, _}=Error->
                              {reply, Error, State}
                      end
@@ -205,6 +209,11 @@ check_hash(Value, Hash) when is_binary(Hash) andalso size(Hash) =:= ?HASH_BYTES 
         true -> ok;
         false -> {error, hash_not_equal}
     end.
+
+
+% -spec create_p2p_ticket() -> p2p_ticket().
+create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
+    keyserver_crypto:create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey).
     
 
 ensure_communication_key_table(Name) ->
@@ -216,8 +225,6 @@ ensure_communication_key_table(Name) ->
         _ ->
             TableName
     end.
-
-
            
 communication_key_table_name(Name) ->
     z_convert:to_atom(z_convert:to_list(Name) ++ "$communication_key_table").
