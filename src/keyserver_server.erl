@@ -141,8 +141,6 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              IV1 = keyserver_crypto:generate_iv(),
                              Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
                              
-                             io:fwrite(standard_error, "response nonce: ~p~n", [ServerNonce1]),
-
                              {reply, {ok, ServerNonce1, IV1, Reply}, State};
                          {error, _}=Error->
                              {reply, Error, State}
