@@ -107,10 +107,10 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
-         [{Id, KeyES, StoredNonce, ServerNonce}] ->
+         [{Id, KeyES, _StoredNonce, ServerNonce}] ->
              
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
-             io:fwrite(standard_error, "TEST NONCE!!!~n", []),
+             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
 
              case keyserver_crypto:decrypt_p2p_request(Nonce, Message, KeyES, IV) of
                  {p2p_request, IdHash, OtherId, EncryptedNonce} ->
@@ -135,7 +135,10 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              %% Lookup communication key of B
                              %% Create ticket for Other, encrypt under B key
                              TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
-                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyES), % <-- KeyES klopt nog niet
+                             
+                             %% Lookup key of other user.
+                             {ok, KeyOtherS} = lookup_key(Table, OtherId),
+                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
 
                              %% Create reply encrypt under KeyES
                              IV1 = keyserver_crypto:generate_iv(),
@@ -174,6 +177,12 @@ terminate(_Reason, _State) ->
 %%
 %% Helpers
 %%
+
+lookup_key(Table, Id) ->
+    case ets:lookup(Table, Id) of
+        [] -> undefined; 
+        [{Id, KeyES, _, _}] -> {ok, KeyES}
+    end.
 
 check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) ->
     check_all([
