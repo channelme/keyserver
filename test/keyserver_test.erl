@@ -61,25 +61,22 @@ keyserver_test_() ->
               BobKey = keyserver_crypto:generate_key(),
               BobNonce = keyserver_crypto:generate_nonce(),
                                        
-              io:fwrite(standard_error, "~p~n", [got_keys]),
                                                                    
               {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
               {ok, BobNonce1, IVBob, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
 
-              io:fwrite(standard_error, "~p~n", [connecting]),
 
               {hello_answer, KeyAliceServer, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
               {hello_answer, KeyBobServer, _, _} = keyserver_crypto:decrypt_hello_answer(BobNonce1, BobCipherText, BobKey, IVBob),
 
-              io:fwrite(standard_error, "~p~n", [got_communication_keys]),
+              %% 
+              {ok, SNonce1, IVS, Result} = keyserver:p2p_request(test, "alice", "bob", AliceNonce1, KeyAliceServer),
                                        
-              Result = keyserver:p2p_request(test, "alice", "bob", AliceNonce1, KeyAliceServer),
-
-              io:fwrite(standard_error, "~p~n", [{result, Result}]),
+              ?assertMatch({p2p_response, _,_,_}, 
+                             keyserver_crypto:decrypt_p2p_response(SNonce1, Result, KeyAliceServer, IVS)),
 
               ok = keyserver:stop(test)
           end}
-
      ]
     }.
     

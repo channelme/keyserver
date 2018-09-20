@@ -135,13 +135,15 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              %% Lookup communication key of B
                              %% Create ticket for Other, encrypt under B key
                              TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
-                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyES), % <-- klopt nog niet
+                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyES), % <-- KeyES klopt nog niet
 
                              %% Create reply encrypt under KeyES
                              IV1 = keyserver_crypto:generate_iv(),
                              Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
+                             
+                             io:fwrite(standard_error, "response nonce: ~p~n", [ServerNonce1]),
 
-                             {reply, {ok, Reply, IV}, State};
+                             {reply, {ok, ServerNonce1, IV1, Reply}, State};
                          {error, _}=Error->
                              {reply, Error, State}
                      end
