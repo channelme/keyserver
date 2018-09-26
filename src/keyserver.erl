@@ -26,7 +26,9 @@
     public_enc_key/1,
     connect_to_server/5,
 
-    p2p_request/5
+    p2p_request/5,
+
+    secure_publish/5
 ]).
 
 -include("keyserver.hrl").
@@ -59,7 +61,10 @@ p2p_request(Name, Id, OtherId, Nonce, Key) when is_binary(Id) andalso is_binary(
 p2p_request(Name, Id, OtherId, Nonce, Key) ->
     p2p_request(Name, z_convert:to_binary(Id), z_convert:to_binary(OtherId), Nonce, Key).
 
-secure_publish(_Id, _Topic, _Nonce, _CommunicationKey) ->
-    ok.
+%% Request a communication key for another party.
+secure_publish(Name, Id, Topic, Nonce, CommunicationKey) ->
+    IV = keyserver_crypto:generate_iv(),
+    Message = keyserver_crypto:encrypt_secure_publish_request(Id, Topic, Nonce, CommunicationKey, IV),
+    keyserver_server:publish_request(Name, Id, Nonce, Message, IV).
 
 

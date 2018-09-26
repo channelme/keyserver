@@ -29,7 +29,6 @@
     hash/1,
 
     inc_nonce/1,
-         
 
     encrypt_hello/3,
     decrypt_hello/2,
@@ -43,8 +42,10 @@
     encrypt_p2p_response/5,
     decrypt_p2p_response/4,
          
-    create_p2p_ticket/5
+    create_p2p_ticket/5,
 
+    encrypt_secure_publish_request/5,
+    decrypt_secure_publish_request/4
 ]).
 
 -include("keyserver.hrl").
@@ -86,8 +87,6 @@ inc_nonce(Nonce) when is_integer(Nonce) ->
 
 % Decode Nonce binary value into an integer.
 decode_nonce(<<Nonce:64/big-unsigned-integer>>) -> 
-    Nonce;
-decode_nonce(Nonce) when Nonce >= 0 andalso Nonce < ?MAX_NONCE -> 
     Nonce.
     
 % Encode a nonce into a 64 bit binary value.
@@ -112,9 +111,12 @@ encrypt_hello(EncKey, Nonce, ServerEncKey) ->
         <<"hello", EncKey/binary, EncNonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
 
 decrypt_hello(Message, PrivateKey) ->
-    <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> =
-        crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding),
-    {hello, EEncKey, decode_nonce(Nonce)}.
+    case crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding) of
+        <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> ->
+            {hello, EEncKey, decode_nonce(Nonce)};
+        Bin when is_binary(Bin) ->
+            {error, message}
+    end.
 
 encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, EncKey, IV) ->
     EncNonce = encode_nonce(Nonce),
@@ -166,11 +168,8 @@ encrypt_p2p_response(Nonce, TicketA, TicketB, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
     TA = length_prefix(TicketA),
     TB = length_prefix(TicketB),
-
     Message = <<"p2p_response", EncNonce/binary, TA/binary, TB/binary>>,
-
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
-    <<Tag/binary, $:, Msg/binary>>.
+    encrypt_message(Message, EncNonce, Key, IV).
 
 decrypt_p2p_response(Nonce, Message, Key, IV) ->
     case decrypt_message(Message, Nonce, Key, IV) of
@@ -187,8 +186,26 @@ decrypt_p2p_response(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
     
-    
 
+encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV) ->
+    EncNonce = encode_nonce(Nonce),
+    IdHash = keyserver_crypto:hash(Id),
+    Message = <<"publish_request", EncNonce/binary, IdHash/binary, Topic/binary>>,
+    encrypt_message(Message, EncNonce, Key, IV).
+
+decrypt_secure_publish_request(Nonce, Message, Key, IV) -> 
+    case decrypt_message(Message, Nonce, Key, IV) of
+        <<"publish_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, Topic/binary>> ->
+            case Nonce =:= decode_nonce(EncNonce) of
+                false ->
+                    {error, nonce};
+                true ->
+                    {publish_request, IdHash, Topic, Nonce}
+            end;
+        Bin when is_binary(Bin) -> {error, plain_msg};
+        {error, _}=Error -> Error
+    end.
+    
 %%
 %% Helpers
 %%

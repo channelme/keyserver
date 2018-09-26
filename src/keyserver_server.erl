@@ -27,7 +27,8 @@
     start_link/2,
     public_enc_key/1,
     connect_to_server/3,  
-    p2p_request/5
+    p2p_request/5, 
+    publish_request/5         
 ]).
 
 % gen_server callbacks
@@ -53,9 +54,6 @@ start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
         {ok, Pid} ->
             true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
             {ok, Pid};
-        {already_started, Pid} ->
-            true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
-            {already_started, Pid};
         Else ->
             Else
     end.
@@ -68,6 +66,9 @@ connect_to_server(Name, Id, Message) ->
     
 p2p_request(Name, Id, Nonce, Message, IV) ->
     gen_server:call(Name, {p2p_request, Id, Nonce, Message, IV}).
+
+publish_request(Name, Id, Nonce, Message, IV) ->
+    gen_server:call(Name, {publish_request, Id, Nonce, Message, IV}).
     
 
 %%
@@ -145,11 +146,35 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
                              
                              {reply, {ok, ServerNonce1, IV1, Reply}, State};
-                         {error, _}=Error->
+                         {error, _}=Error ->
                              {reply, Error, State}
                      end
              end
      end;
+
+handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+     case ets:lookup(Table, Id) of
+         [] -> 
+             {reply, {error, not_found}, State};
+         [{Id, KeyES, _StoredNonce, ServerNonce}] ->
+              
+             % Now, the stored nonce must be somewhat smaller than the received nonce. 
+             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
+
+             case keyserver_crypto:decrypt_secure_publish_request(Nonce, Message, KeyES, IV) of
+                 {publish_request, IdHash, Topic, EncryptedNonce} ->
+                     case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce) of
+                         ok ->
+                             io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
+                             {reply, {ok, todo}, State};
+                         {error, _}=Error ->
+                             {reply, Error, State}
+                     end;
+                 {error, _}=Error ->
+                     {reply, Error, State}
+             end
+     end;
+
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};
@@ -191,14 +216,25 @@ check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) ->
                fun() -> check_allowed(communicate, Id, OtherId) end
               ]).
 
+check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce) ->
+     check_all([
+               fun() -> check_hash(Id, IdHash) end,
+               fun() -> check_equal(Nonce, EncryptedNonce) end,
+               fun() -> check_allowed(publish, Id, Topic) end
+              ]).
+
 check_all([]) -> ok;
 check_all([Check|Rest]) ->
     case Check() of
         ok -> check_all(Rest);
-        error -> error;
+        %error -> error; % no check returns this according to dialyzr
         {error, _}=E -> E
     end.
 
+check_allowed(publish, Id, Topic) ->
+    %% how am I going to do this?
+    io:fwrite(standard_error, "TODO: publish check: ~p, ~p ~n", [Id, Topic]),
+    ok;
 check_allowed(communicate, A, B) ->
     %% how am I going to do this?
     io:fwrite(standard_error, "TODO: communicate check: ~p, ~p ~n", [A, B]),
