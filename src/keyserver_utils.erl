@@ -36,11 +36,11 @@
 
 -spec unix_time() -> timestamp().
 unix_time() ->
-    unix_time(erlang:universaltime()).
+    erlang:system_time(second).
 
 -spec unix_time(calendar:datetime()) -> timestamp().
 unix_time({{_,_,_},{_,_,_}}=DateTime) ->
-    datetime_to_epoch_seconds(DateTime, ?UNIX_EPOCH).
+    erlang:universaltime_to_posixtime(DateTime).
 
 -spec unix_time_to_datetime(timestamp()) -> calendar:datetime().
 unix_time_to_datetime(Ts) ->

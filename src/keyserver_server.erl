@@ -196,11 +196,10 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                                                       expiration_time=ExpirationTime, validity_period=ValidityPeriod},
                              
                              true = ets:insert_new(SessionTable, 
-                                                   #register_entry{owner_id=Id, key=KeyES, nonce=Nonce1, server_nonce=ServerNonce}),
+                                                   #register_entry{owner_id=Id, key=KeyES, nonce=Nonce, server_nonce=ServerNonce}),
                              
                              %% TODO, make response
                              io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
-                             
 
                              {reply, {ok, todo}, State};
                          {error, _}=Error ->
