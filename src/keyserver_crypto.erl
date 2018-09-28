@@ -23,6 +23,7 @@
 
 -export([
     generate_key/0,
+    generate_key_id/0,
     generate_iv/0,
     generate_nonce/0,
          
@@ -51,18 +52,21 @@
 -include("keyserver.hrl").
 
 -type nonce() :: 0..?MAX_NONCE.
+-type key_id() :: <<_:32>>.
 -type key() :: <<_:(?KEY_BYTES*8)>>.
 -type pub_enc_key() :: crypto:rsa_public().
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
 -type encoded_nonce() :: <<_:(?NONCE_BYTES*8)>>.
 
 -type timestamp() :: <<_:(?HASH_BYTES*8)>>.
+-type p2p_ticket() :: binary().
 
 -export_type([
     key/0,
     nonce/0,
     encoded_nonce/0,
     timestamp/0,
+    p2p_ticket/0,
     hash/0
 ]).
 
@@ -70,6 +74,10 @@
 -spec generate_key() -> key().
 generate_key() ->
     crypto:strong_rand_bytes(?KEY_BYTES).
+
+-spec generate_key_id() -> key_id().
+generate_key_id() ->
+    crypto:strong_rand_bytes(4).
 
 -spec generate_iv() -> <<_:128>>.
 generate_iv() ->

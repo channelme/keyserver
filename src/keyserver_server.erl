@@ -39,7 +39,23 @@
     public_key,
     private_key,
 
-    communication_key_table
+    communication_key_table,
+    session_key_table
+}).
+
+-record(register_entry, {
+    owner_id,
+    key,
+    nonce,
+    server_nonce
+}).
+
+-record(session_record, {
+    key_id,
+    key,
+    owner_id,
+    expiration_time,
+    validity_period
 }).
 
 %%
@@ -47,12 +63,13 @@
 %%
 
 start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
-    
     CommunicationKeyTable = ensure_communication_key_table(Name),
+    SessionKeyTable = ensure_session_key_table(Name),
 
     case gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []) of
         {ok, Pid} ->
             true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
+            true = ets:give_away(SessionKeyTable, Pid, session_key_table),
             {ok, Pid};
         Else ->
             Else
@@ -92,7 +109,7 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
                     IV = keyserver_crypto:generate_iv(),
 
                     %% Store the communication key for later use.
-                    true = ets:insert_new(Table, {Id, KeyES, Nonce1, ServerNonce}),
+                    true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, nonce=Nonce1, server_nonce=ServerNonce}),
 
                     CipherMsg = keyserver_crypto:encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce1}, EEncKey, IV),
                     {reply, {ok, Nonce1, IV, CipherMsg}, State};
@@ -108,7 +125,7 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
-         [{Id, KeyES, _StoredNonce, ServerNonce}] ->
+         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce, server_nonce=ServerNonce}] ->
              
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
              io:fwrite(standard_error, "TODO: replay test!!!~n", []),
@@ -152,11 +169,12 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
              end
      end;
 
-handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table, 
+                                                                     session_key_table=SessionTable}=State) ->
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
-         [{Id, KeyES, _StoredNonce, ServerNonce}] ->
+         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce, server_nonce=ServerNonce}] ->
               
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
              io:fwrite(standard_error, "TODO: replay test!!!~n", []),
@@ -165,7 +183,25 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                  {publish_request, IdHash, Topic, EncryptedNonce} ->
                      case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce) of
                          ok ->
+                             
+                             %% Generate a key id. (hash of key?), link to the topic?
+                             SessionKeyId = keyserver_crypto:generate_key_id(),
+                             SessionKey = keyserver_crypto:generate_key(),
+                             
+                             Timestamp = keyserver_utils:unix_time(),
+                             ValidityPeriod = 3600, % 
+                             ExpirationTime = Timestamp + ValidityPeriod,
+                              
+                             Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
+                                                      expiration_time=ExpirationTime, validity_period=ValidityPeriod},
+                             
+                             true = ets:insert_new(SessionTable, 
+                                                   #register_entry{owner_id=Id, key=KeyES, nonce=Nonce1, server_nonce=ServerNonce}),
+                             
+                             %% TODO, make response
                              io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
+                             
+
                              {reply, {ok, todo}, State};
                          {error, _}=Error ->
                              {reply, Error, State}
@@ -190,6 +226,8 @@ handle_cast(Msg, State) ->
     
 handle_info({'ETS-TRANSFER', Table, _FromPid, communication_key_table}, State) ->
     {noreply, State#state{communication_key_table=Table}};
+handle_info({'ETS-TRANSFER', Table, _FromPid, session_key_table}, State) ->
+    {noreply, State#state{session_key_table=Table}};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
@@ -206,7 +244,7 @@ terminate(_Reason, _State) ->
 lookup_key(Table, Id) ->
     case ets:lookup(Table, Id) of
         [] -> undefined; 
-        [{Id, KeyES, _, _}] -> {ok, KeyES}
+        [#register_entry{owner_id=Id, key=KeyES}] -> {ok, KeyES}
     end.
 
 check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) ->
@@ -256,20 +294,26 @@ check_hash(Value, Hash) when is_binary(Hash) andalso size(Hash) =:= ?HASH_BYTES 
     end.
 
 
-% -spec create_p2p_ticket() -> p2p_ticket().
+-spec create_p2p_ticket(keyserver_crypto:key(), keyserver_util:timestamp(), non_neg_integer(), binary(), keyserver_crypto:key()) -> keyserver_crypto:p2p_ticket().
 create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     keyserver_crypto:create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey).
     
-
 ensure_communication_key_table(Name) ->
-    TableName = communication_key_table_name(Name),
+    ensure_table(communication_key_table_name(Name), 2).
 
-    case ets:info(TableName) of
+ensure_session_key_table(Name) ->
+    ensure_table(session_key_table_name(Name), 2).
+
+ensure_table(Name, KeyPos) ->
+    case ets:info(Name) of
         undefined ->
-            ets:new(TableName, [named_table, set, {keypos, 1}, protected, {heir, self(), []}]);
+            ets:new(Name, [named_table, set, {keypos, KeyPos}, protected, {heir, self(), []}]);
         _ ->
-            TableName
+            Name
     end.
            
 communication_key_table_name(Name) ->
-    z_convert:to_atom(z_convert:to_list(Name) ++ "$communication_key_table").
+    z_convert:to_atom(z_convert:to_list(Name) ++ "$communication_keys").
+
+session_key_table_name(Name) ->
+    z_convert:to_atom(z_convert:to_list(Name) ++ "$session_keys").
