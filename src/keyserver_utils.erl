@@ -46,12 +46,8 @@ unix_time({{_,_,_},{_,_,_}}=DateTime) ->
 unix_time_to_datetime(Ts) ->
     epoch_seconds_to_datetime(Ts, ?UNIX_EPOCH).
 
-datetime_to_epoch_seconds({{_,_,_},{_,_,_}}=DateTime, Epoch) ->
-    calendar:datetime_to_gregorian_seconds(DateTime) - Epoch.
-
 epoch_seconds_to_datetime(Ts, Epoch) ->
     calendar:gregorian_seconds_to_datetime(Ts + Epoch).
-
 
 %%
 %% Tests
