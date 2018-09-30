@@ -62,9 +62,12 @@ p2p_request(Name, Id, OtherId, Nonce, Key) ->
     p2p_request(Name, z_convert:to_binary(Id), z_convert:to_binary(OtherId), Nonce, Key).
 
 %% Request a communication key for another party.
-secure_publish(Name, Id, Topic, Nonce, CommunicationKey) ->
+secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
-    Message = keyserver_crypto:encrypt_secure_publish_request(Id, Topic, Nonce, CommunicationKey, IV),
-    keyserver_server:publish_request(Name, Id, Nonce, Message, IV).
+    Message = keyserver_crypto:encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV),
+    keyserver_server:publish_request(Name, Id, Nonce, Message, IV);
+secure_publish(Name, Id, Topic, Nonce, Key) ->
+    secure_publish(Name, z_convert:to_binary(Id), z_convert:to_binary(Topic), Nonce, Key).
+
 
 

@@ -19,7 +19,6 @@
 -author("Maas-Maarten Zeeman <maas@channel.me>").
 
 -define(AES_GCM_TAG_SIZE, 16). % The security of GCM depends on the tag size , so we use the full 128 bits.
--define(MAX_NONCE, ((1 bsl 64) -1)).
 
 -export([
     generate_key/0,
@@ -149,6 +148,7 @@ create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {OtherId, Ticket, ?AES_GCM_TAG_SIZE}),
     <<"p2p-ticket", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
 
+
 %%
 %% p2p requests
 %%
@@ -213,6 +213,11 @@ decrypt_secure_publish_request(Nonce, Message, Key, IV) ->
         Bin when is_binary(Bin) -> {error, plain_msg};
         {error, _}=Error -> Error
     end.
+
+
+encrypt_secure_publish_response() ->
+    ok.
+    
     
 %%
 %% Helpers

@@ -131,7 +131,7 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
-         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce, server_nonce=ServerNonce}] ->
+         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
              
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
              io:fwrite(standard_error, "TODO: replay test!!!~n", []),
@@ -153,8 +153,8 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
                              %% Lifetime
                              Lifetime = 3600, % in seconds one hour (todo, make variable)
                              
-                             %% Increase Nonce server
-                             ServerNonce1 = keyserver_crypto:inc_nonce(ServerNonce),
+                             %% Increase Nonce Server for the response
+                             ServerNonce1 = inc_server_nonce(Id, Table),
 
                              %% Lookup communication key of B
                              %% Create ticket for Other, encrypt under B key
@@ -181,7 +181,7 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
-         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce, server_nonce=ServerNonce}] ->
+         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
               
              % Now, the stored nonce must be somewhat smaller than the received nonce. 
              io:fwrite(standard_error, "TODO: replay test!!!~n", []),
@@ -201,12 +201,21 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                               
                              Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
                                                       expiration_time=ExpirationTime, validity_period=ValidityPeriod},
-                             
-                             true = ets:insert_new(SessionTable, 
-                                                   #register_entry{owner_id=Id, key=KeyES, nonce=Nonce, server_nonce=ServerNonce}),
-                             
+                             true = ets:insert_new(SessionTable, Record),
+
+                             ServerNonce1 = inc_server_nonce(Id, Table),
+
                              %% TODO, make response
                              io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
+
+                             % ServerNonce1 = keyserver_crypto:inc_nonce(ServerNonce),
+
+                             %% Create reply encrypt under KeyES
+                             IV1 = keyserver_crypto:generate_iv(),
+
+                             % Reply = keyserver_crypto:encrypt_publish_response(ServerNonce, SessionKeyId, Key, Timestamp, ValidityPeriod, KeyES, IV1),
+
+                             
 
                              {reply, {ok, todo}, State};
                          {error, _}=Error ->
@@ -246,6 +255,10 @@ terminate(_Reason, _State) ->
 %%
 %% Helpers
 %%
+
+-spec inc_server_nonce(binary(), ets:tab()) -> integer().
+inc_server_nonce(Id, Table) ->
+    ets:update_counter(Table, Id, {#register_entry.server_nonce, 1, ?MAX_NONCE, 0}).
 
 lookup_key(Table, Id) ->
     case ets:lookup(Table, Id) of
