@@ -20,7 +20,7 @@
 -module(keyserver_sup).
 -behaviour(supervisor).
 
--export([start_link/1]).
+-export([start_link/3]).
 
 -define(PUBLIC_MODULUS, 65537).
 -define(MODULUS_SIZE, 2048).
@@ -28,15 +28,13 @@
 % supervisor callback.
 -export([init/1]).
 
-start_link(Name) ->
-    %% Generate a key-pair
-    supervisor:start_link(?MODULE, Name).
+start_link(Name, CallbackModule, UserContext) ->
+    supervisor:start_link(?MODULE, [Name, CallbackModule, UserContext]).
 
-init(Name) ->
-    %% TODO, the supervisor should create an ets table. 
+init([Name, CallbackModule, UserContext]) ->
     KeyPair = crypto:generate_key(rsa, {?MODULUS_SIZE, ?PUBLIC_MODULUS}),
     
     {ok, {{one_for_all, 1, 3600},
           [{keyserver_server,
-            {keyserver_server, start_link, [Name, KeyPair]},
+            {keyserver_server, start_link, [Name, KeyPair, CallbackModule, UserContext]},
             permanent, 5000, worker, [keyserver_server]}]}}.

@@ -24,7 +24,7 @@
     start_link/0,
     stop/0,
 
-    start_keyserver/1,
+    start_keyserver/3,
     stop_keyserver/1
 ]).
 
@@ -39,9 +39,9 @@ stop() ->
         _ -> ok
     end.
 
-start_keyserver(Name) ->
+start_keyserver(Name, CallbackModule, UserContext) ->
     ChildSpec = {Name,
-                 {keyserver_sup, start_link, [Name]},
+                 {keyserver_sup, start_link, [Name, CallbackModule, UserContext]},
                  permanent, 10000, supervisor, [keyserver_sup]},
     supervisor:start_child(?MODULE, ChildSpec).
 

@@ -24,7 +24,7 @@
 -include("keyserver.hrl").
 
 -export([
-    start_link/2,
+    start_link/4,
     public_enc_key/1,
     connect_to_server/3,  
     p2p_request/5, 
@@ -40,7 +40,10 @@
     private_key,
 
     communication_key_table,
-    session_key_table
+    session_key_table,
+
+    callback_module,
+    user_context
 }).
 
 -record(register_entry, {
@@ -62,11 +65,11 @@
 %% API
 %%
 
-start_link(Name, {_PublicKey, _PrivateKey}=KeyPair) ->
+start_link(Name, {_PublicKey, _PrivateKey}=KeyPair, CallbackModule, UserContext) ->
     CommunicationKeyTable = ensure_communication_key_table(Name),
     SessionKeyTable = ensure_session_key_table(Name),
 
-    case gen_server:start_link({local, Name}, ?MODULE, [KeyPair], []) of
+    case gen_server:start_link({local, Name}, ?MODULE, [KeyPair, CallbackModule, UserContext], []) of
         {ok, Pid} ->
             true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
             true = ets:give_away(SessionKeyTable, Pid, session_key_table),
@@ -92,8 +95,10 @@ publish_request(Name, Id, Nonce, Message, IV) ->
 %% gen_server callbacks
 %%
 
-init([{PublicKey, PrivateKey}]) ->
-    {ok, #state{public_key=PublicKey, private_key=PrivateKey}}.
+init([{PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
+    State = #state{public_key=PublicKey, private_key=PrivateKey,
+                   callback_module=CallbackModule, user_context=UserContext},
+    {ok, State}.
 
 handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=undefined}=State) ->
     {reply, {error, not_ready}, State};
@@ -121,7 +126,8 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
     end;
 
 %  {p2p_request, Id, Nonce, Message, Message, IV}).
-handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table, 
+                                                                 callback_module=M, user_context=C}=State) ->
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
@@ -132,7 +138,7 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
 
              case keyserver_crypto:decrypt_p2p_request(Nonce, Message, KeyES, IV) of
                  {p2p_request, IdHash, OtherId, EncryptedNonce} ->
-                     case check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) of
+                     case check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce, M, C) of
                          ok ->
                              %% Generate a key, and encrypt a ticket for Id, and OtherId
                              %% Add a timestamp for max validity period.
@@ -169,8 +175,9 @@ handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_k
              end
      end;
 
-handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table, 
-                                                                     session_key_table=SessionTable}=State) ->
+handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table,
+                                                                     session_key_table=SessionTable,
+                                                                     callback_module=M, user_context=C}=State) ->
      case ets:lookup(Table, Id) of
          [] -> 
              {reply, {error, not_found}, State};
@@ -181,7 +188,7 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
 
              case keyserver_crypto:decrypt_secure_publish_request(Nonce, Message, KeyES, IV) of
                  {publish_request, IdHash, Topic, EncryptedNonce} ->
-                     case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce) of
+                     case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, M, C) of
                          ok ->
                              
                              %% Generate a key id. (hash of key?), link to the topic?
@@ -246,18 +253,18 @@ lookup_key(Table, Id) ->
         [#register_entry{owner_id=Id, key=KeyES}] -> {ok, KeyES}
     end.
 
-check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce) ->
+check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce, Module, Context) ->
     check_all([
                fun() -> check_hash(Id, IdHash) end,
                fun() -> check_equal(Nonce, EncryptedNonce) end,
-               fun() -> check_allowed(communicate, Id, OtherId) end
+               fun() -> check_allowed(communicate, [{id, Id}, {other_id, OtherId}], Module, Context) end
               ]).
 
-check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce) ->
+check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, Module, Context) ->
      check_all([
                fun() -> check_hash(Id, IdHash) end,
                fun() -> check_equal(Nonce, EncryptedNonce) end,
-               fun() -> check_allowed(publish, Id, Topic) end
+               fun() -> check_allowed(publish, [{id, Id}, {topic, Topic}], Module, Context) end
               ]).
 
 check_all([]) -> ok;
@@ -268,14 +275,12 @@ check_all([Check|Rest]) ->
         {error, _}=E -> E
     end.
 
-check_allowed(publish, Id, Topic) ->
-    %% how am I going to do this?
-    io:fwrite(standard_error, "TODO: publish check: ~p, ~p ~n", [Id, Topic]),
-    ok;
-check_allowed(communicate, A, B) ->
-    %% how am I going to do this?
-    io:fwrite(standard_error, "TODO: communicate check: ~p, ~p ~n", [A, B]),
-    ok.
+check_allowed(What, Args, Module, Context) when is_atom(What) andalso is_list(Args) ->
+    case catch Module:is_allowed(What, Args, Context) of
+        true -> ok;
+        false -> {error, not_allowed};
+        Response -> {error, {unexpected_response, Response, Module, Context}}
+    end.
 
 -spec check_equal(term(), term()) -> ok | {error, not_equal}.
 check_equal(A, B) ->

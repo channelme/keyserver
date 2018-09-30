@@ -20,7 +20,7 @@
 
 
 -export([
-    start/1,
+    start/3,
     stop/1,
 
     public_enc_key/1,
@@ -33,8 +33,8 @@
 
 -include("keyserver.hrl").
 
-start(Name) when is_atom(Name) ->
-    keyserver_app_sup:start_keyserver(Name).
+start(Name, CallbackModule, UserContext) when is_atom(Name) ->
+    keyserver_app_sup:start_keyserver(Name, CallbackModule, UserContext).
 
 stop(Name) when is_atom(Name) ->
     keyserver_app_sup:stop_keyserver(Name).

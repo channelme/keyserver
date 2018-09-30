@@ -4,6 +4,15 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-export([is_allowed/3]).
+
+is_allowed(publish, _Args, _Context) ->
+    true;
+is_allowed(communicate, _Args, _Context) ->
+    true;
+is_allowed(_, _, _) ->
+    false.
+
 setup() ->
     application:start(keyserver).
 
@@ -21,18 +30,18 @@ keyserver_test_() ->
      fun teardown/1,
      [
       {"Test starting and stopping a keyserver", fun() -> 
-              {ok, _SupPid} = keyserver:start(test),
+              {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
               ok = keyserver:stop(test)
           end},
 
       {"Get the public encryption key from the keyserver", fun() -> 
-              {ok, _SupPid} = keyserver:start(test),
+              {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
               {ok, ServerEncKey} = keyserver:public_enc_key(test),
               ok = keyserver:stop(test)
           end},
 
       {"Connect to the keyserver", fun() -> 
-              {ok, _SupPid} = keyserver:start(test),
+              {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
               {ok, ServerEncKey} = keyserver:public_enc_key(test),
                                                                    
               Key = keyserver_crypto:generate_key(),
@@ -52,7 +61,7 @@ keyserver_test_() ->
           end},
       
       {"Setup point to point", fun() -> 
-              {ok, _SupPid} = keyserver:start(test),
+              {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
               {ok, ServerEncKey} = keyserver:public_enc_key(test),
                                                                    
               AliceKey = keyserver_crypto:generate_key(),
@@ -60,7 +69,6 @@ keyserver_test_() ->
 
               BobKey = keyserver_crypto:generate_key(),
               BobNonce = keyserver_crypto:generate_nonce(),
-                                       
                                                                    
               {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
               {ok, BobNonce1, IVBob, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
