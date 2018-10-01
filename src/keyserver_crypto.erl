@@ -45,13 +45,16 @@
     create_p2p_ticket/5,
 
     encrypt_secure_publish_request/5,
-    decrypt_secure_publish_request/4
+    decrypt_secure_publish_request/4,
+
+    encrypt_secure_publish_response/7,
+    decrypt_secure_publish_response/4
 ]).
 
 -include("keyserver.hrl").
 
 -type nonce() :: 0..?MAX_NONCE.
--type key_id() :: <<_:32>>.
+-type key_id() :: <<_:(?KEY_ID_BYTES*8)>>.
 -type key() :: <<_:(?KEY_BYTES*8)>>.
 -type pub_enc_key() :: crypto:rsa_public().
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
@@ -93,6 +96,7 @@ inc_nonce(Nonce) when is_integer(Nonce) ->
     (Nonce + 1) rem ?MAX_NONCE.
 
 % Decode Nonce binary value into an integer.
+-spec decode_nonce(encoded_nonce()) -> nonce().
 decode_nonce(<<Nonce:64/big-unsigned-integer>>) -> 
     Nonce.
     
@@ -214,11 +218,31 @@ decrypt_secure_publish_request(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
 
+encrypt_secure_publish_response(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
+    EncNonce = encode_nonce(Nonce),
+    
+    Message = <<"publish_response", EncNonce/binary, 
+                SessionKeyId/binary, SessionKey/binary,
+                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
 
-encrypt_secure_publish_response() ->
-    ok.
-    
-    
+    encrypt_message(Message, EncNonce, Key, IV).
+
+decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
+     case decrypt_message(Message, Nonce, Key, IV) of
+        <<"publish_response", EncNonce:?NONCE_BYTES/binary, 
+          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
+          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
+            case Nonce =:= decode_nonce(EncNonce) of
+                false ->
+                    {error, nonce};
+                true ->
+                    {publish_response, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
+            end;
+        Bin when is_binary(Bin) -> {error, plain_msg};
+        {error, _}=Error -> Error
+    end.
+
+
 %%
 %% Helpers
 %%

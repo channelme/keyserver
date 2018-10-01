@@ -210,16 +210,14 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                              %% TODO, make response
                              io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
 
-                             % ServerNonce1 = keyserver_crypto:inc_nonce(ServerNonce),
-
                              %% Create reply encrypt under KeyES
                              IV1 = keyserver_crypto:generate_iv(),
 
-                             % Reply = keyserver_crypto:encrypt_publish_response(ServerNonce, SessionKeyId, Key, Timestamp, ValidityPeriod, KeyES, IV1),
+                             Reply = keyserver_crypto:encrypt_secure_publish_response(ServerNonce1,
+                                         SessionKeyId, SessionKey, 
+                                         Timestamp, ValidityPeriod, KeyES, IV1),
 
-                             
-
-                             {reply, {ok, todo}, State};
+                             {reply, {ok, ServerNonce1, IV1, Reply}, State};
                          {error, _}=Error ->
                              {reply, Error, State}
                      end;
@@ -262,6 +260,7 @@ terminate(_Reason, _State) ->
 inc_server_nonce(Id, Table) ->
     ets:update_counter(Table, Id, {#register_entry.server_nonce, 1, ?MAX_NONCE, 0}).
 
+-spec lookup_key(ets:tab(), binary()) -> {ok, keyserver_crypto:key()} | undefined.
 lookup_key(Table, Id) ->
     case ets:lookup(Table, Id) of
         [] -> undefined; 

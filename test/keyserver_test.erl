@@ -44,7 +44,6 @@ keyserver_test_() ->
      ]
     }.
 
-
 connect() ->
     {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
     {ok, ServerEncKey} = keyserver:public_enc_key(test),
@@ -52,15 +51,12 @@ connect() ->
     Key = keyserver_crypto:generate_key(),
     Nonce = keyserver_crypto:generate_nonce(),
 
-    {ok, Nonce1, IV, CipherText} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
+    {hello_answer, _KeyES, _ServerNonce, Nonce1} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
 
     %% Check the response
     %%
     %% Nonce1 should be > Nonce (in this case +1)
     Nonce1 = keyserver_crypto:inc_nonce(Nonce),
-
-    %% And it should be possible to decrypt the response with Key.
-    {hello_answer, _KeyES, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(Nonce1, CipherText, Key, IV),
 
     ok = keyserver:stop(test).
 
@@ -74,12 +70,11 @@ point_to_point() ->
     BobKey = keyserver_crypto:generate_key(),
     BobNonce = keyserver_crypto:generate_nonce(),
 
-    {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
-    {ok, BobNonce1, IVBob, BobCipherText} = keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
+    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} = 
+        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
 
-
-    {hello_answer, KeyAliceServer, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
-    {hello_answer, KeyBobServer, _, _} = keyserver_crypto:decrypt_hello_answer(BobNonce1, BobCipherText, BobKey, IVBob),
+    {hello_answer, KeyBobServer, _, _} =
+        keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
 
     %% 
     {ok, SNonce1, IVS, Result} = keyserver:p2p_request(test, "alice", "bob", AliceNonce1, KeyAliceServer),
@@ -97,11 +92,11 @@ secure_publish() ->
     AliceKey = keyserver_crypto:generate_key(),
     AliceNonce = keyserver_crypto:generate_nonce(),
 
-    {ok, AliceNonce1, IVAlice, AliceCipherText} = keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
+        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
 
-    {hello_answer, KeyAliceServer, _ServerNonce, _Nonce} = keyserver_crypto:decrypt_hello_answer(AliceNonce1, AliceCipherText, AliceKey, IVAlice),
-
-    {ok, SNonce1, IVS, Result} = keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({publish_response, _, _, _, _, _},
+                 keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer)),
 
     ok = keyserver:stop(test).
   

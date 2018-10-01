@@ -48,7 +48,13 @@ connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) anda
     Message = keyserver_crypto:encrypt_hello(EncKey, Nonce, ServerEncKey),
      
     %% Server handles the request.
-    keyserver_server:connect_to_server(Name, Id, Message);
+    case keyserver_server:connect_to_server(Name, Id, Message) of
+        {ok, SNonce1, IVS, Result} ->
+            %% TODO: replay check
+            keyserver_crypto:decrypt_hello_answer(SNonce1, Result, EncKey, IVS);
+        {error, _} = Error -> Error
+    end;
+
 connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) ->
     connect_to_server(Name, z_convert:to_binary(Id), EncKey, Nonce, ServerEncKey).
     
@@ -65,7 +71,13 @@ p2p_request(Name, Id, OtherId, Nonce, Key) ->
 secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
     Message = keyserver_crypto:encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV),
-    keyserver_server:publish_request(Name, Id, Nonce, Message, IV);
+
+    case keyserver_server:publish_request(Name, Id, Nonce, Message, IV) of
+        {ok, SNonce1, IVS, Result} ->
+            %% TODO: replay check
+            keyserver_crypto:decrypt_secure_publish_response(SNonce1, Result, Key, IVS);
+        {error, _} = Error -> Error
+    end;
 secure_publish(Name, Id, Topic, Nonce, Key) ->
     secure_publish(Name, z_convert:to_binary(Id), z_convert:to_binary(Topic), Nonce, Key).
 
