@@ -50,7 +50,9 @@
     owner_id,
     key,
     nonce,
-    server_nonce
+    server_nonce,
+    expiration_time,
+    validity_period
 }).
 
 -record(session_record, {
