@@ -92,11 +92,18 @@ secure_publish() ->
     AliceKey = keyserver_crypto:generate_key(),
     AliceNonce = keyserver_crypto:generate_nonce(),
 
+    %% 
     {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
         keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
 
-    ?assertMatch({publish_response, _, _, _, _, _},
-                 keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer)),
+    R = keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({publish_response, _, _, _, _, _}, R),
+    {publish_response, SesKeyId, SesKey, _Ts, _Lt, _N} = R,
+    
+    %% We know the key...
+    Message = <<"Hallo allemaal">>,
+    CipherText = keyserver_crypto:encrypt_secure_publish(Message, SesKeyId, SesKey),
+    {ok, Message} = keyserver_crypto:decrypt_secure_publish(CipherText, SesKeyId, SesKey),
 
     ok = keyserver:stop(test).
   

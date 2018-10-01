@@ -48,7 +48,10 @@
     decrypt_secure_publish_request/4,
 
     encrypt_secure_publish_response/7,
-    decrypt_secure_publish_response/4
+    decrypt_secure_publish_response/4,
+
+    encrypt_secure_publish/3,
+    decrypt_secure_publish/3
 ]).
 
 -include("keyserver.hrl").
@@ -79,11 +82,11 @@ generate_key() ->
 
 -spec generate_key_id() -> key_id().
 generate_key_id() ->
-    crypto:strong_rand_bytes(4).
+    crypto:strong_rand_bytes(?KEY_ID_BYTES).
 
 -spec generate_iv() -> <<_:128>>.
 generate_iv() ->
-    crypto:strong_rand_bytes(16).
+    crypto:strong_rand_bytes(?IV_BYTES).
     
 -spec generate_nonce() -> nonce().
 generate_nonce() ->
@@ -242,6 +245,18 @@ decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
 
+
+encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+    IV = keyserver_crypto:generate_iv(),
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {KeyId, Message, ?AES_GCM_TAG_SIZE}),
+    <<"sec-pub", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
+
+decrypt_secure_publish(<<"sec-pub", IV:?IV_BYTES/binary, $:, Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+    case crypto:block_decrypt(aes_gcm, Key, IV, {KeyId, Msg, Tag}) of
+        Bin when is_binary(Bin) -> {ok, Bin};
+        {error, _}=Error -> Error
+    end.
+    
 
 %%
 %% Helpers
