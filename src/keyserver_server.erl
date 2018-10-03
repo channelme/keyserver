@@ -28,7 +28,8 @@
     public_enc_key/1,
     connect_to_server/3,  
     p2p_request/5, 
-    publish_request/5         
+    publish_request/5,
+    subscribe_request/5         
 ]).
 
 % gen_server callbacks
@@ -86,11 +87,15 @@ public_enc_key(Name) ->
 connect_to_server(Name, Id, Message) ->
     gen_server:call(Name, {connect_to_server, Id, Message}).
     
+
 p2p_request(Name, Id, Nonce, Message, IV) ->
     gen_server:call(Name, {p2p_request, Id, Nonce, Message, IV}).
 
 publish_request(Name, Id, Nonce, Message, IV) ->
     gen_server:call(Name, {publish_request, Id, Nonce, Message, IV}).
+    
+subscribe_request(Name, Id, Nonce, Message, IV) -> 
+    gen_server:call(Name, {subscribe_request, Id, Nonce, Message, IV}).
     
 
 %%
@@ -192,7 +197,6 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                  {publish_request, IdHash, Topic, EncryptedNonce} ->
                      case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, M, C) of
                          ok ->
-                             
                              %% Generate a key id. (hash of key?), link to the topic?
                              SessionKeyId = keyserver_crypto:generate_key_id(),
                              SessionKey = keyserver_crypto:generate_key(),
@@ -208,7 +212,7 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                              ServerNonce1 = inc_server_nonce(Id, Table),
 
                              %% TODO, make response
-                             io:fwrite(standard_error, "TODO: we can create a reply.~n", []),
+                             io:fwrite(standard_error, "TODO: we can create a reply.~p~n", [SessionKeyId]),
 
                              %% Create reply encrypt under KeyES
                              IV1 = keyserver_crypto:generate_iv(),
@@ -225,7 +229,50 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                      {reply, Error, State}
              end
      end;
+handle_call({subscribe_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table,
+                                                                     session_key_table=SessionTable,
+                                                                     callback_module=M, user_context=C}=State) ->
+     case ets:lookup(Table, Id) of
+         [] -> {reply, {error, not_found}, State};
+         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
+             % Now, the stored nonce must be somewhat smaller than the received nonce. 
+             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
+             case keyserver_crypto:decrypt_secure_subscribe_request(Nonce, Message, KeyES, IV) of
+                 {subscribe_request, IdHash, SessionKeyId, Topic, EncryptedNonce} ->
+                     case check_subscribe_request(Id, IdHash, SessionKeyId, Topic, Nonce, EncryptedNonce, M, C) of
+                         ok ->
+                             io:fwrite("secure subscribe request~n", []),
 
+                             ServerNonce1 = inc_server_nonce(Id, Table),
+
+                             case ets:lookup(SessionTable, SessionKeyId) of
+                                 [] ->
+                                     {reply, {error, nokey}, State};
+                                 [#session_record{key=SessionKey, 
+                                                  expiration_time=ExpirationTime}=SesRec] ->
+
+                                     io:fwrite("session-record: ~p~n", [SesRec]),
+                                     %% Construct the reply...
+
+                                     Timestamp = keyserver_utils:unix_time(),
+                                     ValidityPeriod = ExpirationTime - Timestamp,
+
+                                     IV1 = keyserver_crypto:generate_iv(),
+
+                                     Reply = keyserver_crypto:encrypt_session_key(ServerNonce1,
+                                         SessionKeyId, SessionKey, 
+                                         Timestamp, ValidityPeriod, KeyES, IV1),
+                                     {reply, {ok, ServerNonce1, IV1, Reply}, State}
+                             end;
+                         {error, _}=Error ->
+                             {reply, Error, State}
+                     end;
+                 {error, _}=Error ->
+                     {reply, Error, State}
+             end
+     end;
+
+ 
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};
@@ -280,6 +327,14 @@ check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, Module, Context)
                fun() -> check_equal(Nonce, EncryptedNonce) end,
                fun() -> check_allowed(publish, [{id, Id}, {topic, Topic}], Module, Context) end
               ]).
+
+check_subscribe_request(Id, IdHash, KeyId, Topic, Nonce, EncryptedNonce, Module, Context) ->
+     check_all([
+               fun() -> check_hash(Id, IdHash) end,
+               fun() -> check_equal(Nonce, EncryptedNonce) end,
+               fun() -> check_allowed(subscribe, [{id, Id}, {topic, Topic}, {key_id, KeyId}], Module, Context) end
+              ]).
+
 
 check_all([]) -> ok;
 check_all([Check|Rest]) ->

@@ -50,8 +50,14 @@
     encrypt_secure_publish_response/7,
     decrypt_secure_publish_response/4,
 
+    encrypt_session_key/7,
+    decrypt_session_key/4,
+
     encrypt_secure_publish/3,
-    decrypt_secure_publish/3
+    decrypt_secure_publish/3,
+
+    encrypt_secure_subscribe_request/6,
+    decrypt_secure_subscribe_request/4
 ]).
 
 -include("keyserver.hrl").
@@ -230,6 +236,31 @@ encrypt_secure_publish_response(Nonce, SessionKeyId, SessionKey, Timestamp, Life
 
     encrypt_message(Message, EncNonce, Key, IV).
 
+%% TODO: same as above.
+encrypt_session_key(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
+    EncNonce = encode_nonce(Nonce),
+    
+    Message = <<"session-key", EncNonce/binary, 
+                SessionKeyId/binary, SessionKey/binary,
+                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
+
+    encrypt_message(Message, EncNonce, Key, IV).
+
+decrypt_session_key(Nonce, Message, Key, IV) ->
+     case decrypt_message(Message, Nonce, Key, IV) of
+        <<"session-key", EncNonce:?NONCE_BYTES/binary, 
+          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
+          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
+            case Nonce =:= decode_nonce(EncNonce) of
+                false ->
+                    {error, nonce};
+                true ->
+                    {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
+            end;
+        Bin when is_binary(Bin) -> {error, plain_msg};
+        {error, _}=Error -> Error
+    end.
+
 decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
      case decrypt_message(Message, Nonce, Key, IV) of
         <<"publish_response", EncNonce:?NONCE_BYTES/binary, 
@@ -257,7 +288,31 @@ decrypt_secure_publish(<<"sec-pub", IV:?IV_BYTES/binary, $:, Tag:?AES_GCM_TAG_SI
         {error, _}=Error -> Error
     end.
     
+%%
+%% Secure Subscribe
+%%
 
+encrypt_secure_subscribe_request(Id, KeyId, Topic, Nonce, Key, IV) ->
+    EncNonce = encode_nonce(Nonce),
+    IdHash = keyserver_crypto:hash(Id),
+    Message = <<"subscribe_request", EncNonce/binary, IdHash/binary, KeyId/binary, Topic/binary>>,
+    encrypt_message(Message, EncNonce, Key, IV).
+
+decrypt_secure_subscribe_request(Nonce, Message, Key, IV) ->
+     case decrypt_message(Message, Nonce, Key, IV) of
+        <<"subscribe_request", EncNonce:?NONCE_BYTES/binary, 
+          IdHash:?HASH_BYTES/binary,
+          KeyId:?KEY_ID_BYTES/binary,
+          Topic/binary>> ->
+             case Nonce =:= decode_nonce(EncNonce) of
+                 false -> {error, nonce};
+                 true -> {subscribe_request, IdHash, KeyId, Topic, Nonce}
+             end;
+         Bin when is_binary(Bin) -> {error, plain_msg};
+         {error, _}=Error -> Error
+     end.
+
+ 
 %%
 %% Helpers
 %%

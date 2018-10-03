@@ -28,7 +28,8 @@
 
     p2p_request/5,
 
-    secure_publish/5
+    secure_publish/5,
+    secure_subscribe/6
 ]).
 
 -include("keyserver.hrl").
@@ -81,5 +82,15 @@ secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary
 secure_publish(Name, Id, Topic, Nonce, Key) ->
     secure_publish(Name, z_convert:to_binary(Id), z_convert:to_binary(Topic), Nonce, Key).
 
+secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
+    IV = keyserver_crypto:generate_iv(),
+    Message = keyserver_crypto:encrypt_secure_subscribe_request(Id, KeyId, Topic, Nonce, Key, IV),
 
-
+    case keyserver_server:subscribe_request(Name, Id, Nonce, Message, IV) of
+        {ok, SNonce1, IVS, Result} ->
+            %% TODO: replay check...    
+            keyserver_crypto:decrypt_session_key(SNonce1, Result, Key, IVS);
+        {error, _} = Error -> Error
+    end;
+secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) ->
+    secure_subscribe(Name, z_convert:to_binary(Id), KeyId, z_convert:to_binary(Topic), Nonce, Key).
