@@ -29,6 +29,8 @@
     p2p_request/5,
 
     secure_publish/5,
+    secure_publish_new/5,
+
     secure_subscribe/6
 ]).
 
@@ -81,6 +83,18 @@ secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary
     end;
 secure_publish(Name, Id, Topic, Nonce, Key) ->
     secure_publish(Name, z_convert:to_binary(Id), z_convert:to_binary(Topic), Nonce, Key).
+
+secure_publish_new(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) ->
+    IV = keyserver_crypto:generate_iv(),
+    EncryptedRequest = keyserver_crypto:encrypt_request(Id, Nonce, {publish, Topic}, Key, IV),
+
+    case keyserver_server:request(Name, Id, EncryptedRequest, IV) of
+        {ok, SNonce1, IVS, Result} ->
+            %% TODO: replay check
+            keyserver_crypto:decrypt_secure_publish_response(SNonce1, Result, Key, IVS);
+        {error, _} = Error -> Error
+    end.
+
 
 secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),

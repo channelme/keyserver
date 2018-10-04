@@ -42,7 +42,8 @@ keyserver_test_() ->
       {"Connect to the keyserver", fun connect/0},
       {"Setup point to point", fun point_to_point/0},
       {"Secure publish", fun secure_publish/0},
-      {"Secure subscribe", fun secure_subscribe/0}
+      {"Secure subscribe", fun secure_subscribe/0},
+      {"Secure subscribe - new style", fun secure_subscribe_new/0}
      ]
     }.
 
@@ -131,5 +132,23 @@ secure_subscribe() ->
     ?assertMatch({session_key, _, _, _, _, _}, SR),
     {session_key, SesKeyId, SesKey, _Ts1, _Lt1, _N1} = SR,
     
-    ok.
- 
+    ok = keyserver:stop(test).
+
+secure_subscribe_new() ->
+    {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
+    {ok, ServerEncKey} = keyserver:public_enc_key(test),
+
+    AliceKey = keyserver_crypto:generate_key(),
+    AliceNonce = keyserver_crypto:generate_nonce(),
+
+    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
+        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+
+    io:fwrite("YEAH~n", []),
+
+    R = keyserver:secure_publish_new(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({publish_response, _, _, _, _, _}, R),
+    {publish_response, SesKeyId, SesKey, _Ts, _Lt, _N} = R,
+    
+
+    ok = keyserver:stop(test).

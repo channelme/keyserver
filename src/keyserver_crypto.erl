@@ -20,6 +20,11 @@
 
 -define(AES_GCM_TAG_SIZE, 16). % The security of GCM depends on the tag size , so we use the full 128 bits.
 
+-define(V1, $1).
+-define(PUBLISH, $P).
+-define(SUBSCRIBE, $S).
+-define(DIRECT, $D).
+
 -export([
     generate_key/0,
     generate_key_id/0,
@@ -52,6 +57,9 @@
 
     encrypt_session_key/7,
     decrypt_session_key/4,
+         
+    encrypt_request/5,
+    decrypt_request/4,
 
     encrypt_secure_publish/3,
     decrypt_secure_publish/3,
@@ -65,6 +73,7 @@
 -type nonce() :: 0..?MAX_NONCE.
 -type key_id() :: <<_:(?KEY_ID_BYTES*8)>>.
 -type key() :: <<_:(?KEY_BYTES*8)>>.
+-type iv() :: <<_:(?IV_BYTES*8)>>.
 -type pub_enc_key() :: crypto:rsa_public().
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
 -type encoded_nonce() :: <<_:(?NONCE_BYTES*8)>>.
@@ -74,6 +83,7 @@
 
 -export_type([
     key/0,
+    iv/0,
     nonce/0,
     encoded_nonce/0,
     timestamp/0,
@@ -311,6 +321,54 @@ decrypt_secure_subscribe_request(Nonce, Message, Key, IV) ->
          Bin when is_binary(Bin) -> {error, plain_msg};
          {error, _}=Error -> Error
      end.
+
+encrypt_request(Id, Nonce, Request, Key, IV) ->
+    IdHash = keyserver_crypto:hash(Id),
+    EncNonce = encode_nonce(Nonce),
+    Message = encode_request(Request),
+    M = <<?V1, EncNonce/binary, Message/binary>>,   
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {IdHash, M, ?AES_GCM_TAG_SIZE}),
+    <<Tag/binary, $:, Msg/binary>>.
+
+encode_request({direct, OtherId}) ->
+    <<?DIRECT, OtherId/binary>>;
+encode_request({publish, Topic}) ->
+    <<?PUBLISH, Topic/binary>>; 
+encode_request({subscribe, KeyId, Topic}) ->
+    <<?SUBSCRIBE, KeyId/binary, Topic/binary>>.
+
+decode_request(<<?DIRECT, OtherId/binary>>) ->
+    {direct, OtherId};
+decode_request(<<?PUBLISH, Topic/binary>>) ->
+    {publish, Topic};
+decode_request(<<?SUBSCRIBE, KeyId:?KEY_ID_BYTES/binary, Topic/binary>>) ->
+    {subscribe, KeyId, Topic};
+decode_request(_) ->
+    {error, unknown_request}.
+
+-spec decrypt_request(binary(), binary(), key(), iv()) -> 
+                             {direct, binary()} | 
+                             {publish, binary()} | 
+                             {subscribe, key_id(), binary()} | 
+                             {error, unknown_request} | 
+                             {error, plaintext} | 
+                             {error, ciphertext} | 
+                             {error, cipher_integrity}.
+decrypt_request(Id, Message, Key, IV) ->
+    IdHash = keyserver_crypto:hash(Id),
+    case Message of
+        <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
+            case crypto:block_decrypt(aes_gcm, Key, IV, {IdHash, Msg, Tag}) of
+                <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
+                    {ok, decode_nonce(EncNonce), decode_request(Protocol)};
+                error -> 
+                    {error, cipher_integrity};
+                _ ->
+                    {error, plaintext}
+            end;
+        _ ->
+            {error, ciphertext}
+    end.
 
  
 %%

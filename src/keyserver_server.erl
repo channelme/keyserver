@@ -27,9 +27,12 @@
     start_link/4,
     public_enc_key/1,
     connect_to_server/3,  
+
     p2p_request/5, 
     publish_request/5,
-    subscribe_request/5         
+    subscribe_request/5,
+
+    request/4      
 ]).
 
 % gen_server callbacks
@@ -97,6 +100,8 @@ publish_request(Name, Id, Nonce, Message, IV) ->
 subscribe_request(Name, Id, Nonce, Message, IV) -> 
     gen_server:call(Name, {subscribe_request, Id, Nonce, Message, IV}).
     
+request(Name, Id, Message, IV) ->
+    gen_server:call(Name, {request, Id, Message, IV}).
 
 %%
 %% gen_server callbacks
@@ -130,6 +135,25 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
             end;
         _ ->
             {reply, {error, already_connected}, State}
+    end;
+
+handle_call({request, Id, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+    case ets:lookup(Table, Id) of
+        [] -> 
+            {reply, {error, not_found}, State};
+        [#register_entry{owner_id=Id, key=KeyES, nonce=StoredNonce, server_nonce=ServerNonce}=Entry] ->
+            case keyserver_crypto:decrypt_request(Id, Message, KeyES, IV) of
+                {error, _}=E ->
+                    {reply, E, State};
+                {ok, RequestNonce, Request} ->
+                    io:fwrite(standard_error, "TODO: Replay detection: ~p: ~p~n", [RequestNonce, StoredNonce]),
+                    {Response, State1} = handle_request(Request, Entry, State),
+                    ServerNonce1 = inc_server_nonce(Id, Table),
+
+                    io:fwrite(standard_error, "Request: ~p, ~p~n", [Request, Response]),
+                    io:fwrite(standard_error, "ServerNonce: ~p~n", [ServerNonce1]),
+                    {reply, Response, State1}
+            end
     end;
 
 %  {p2p_request, Id, Nonce, Message, Message, IV}).
@@ -302,6 +326,96 @@ terminate(_Reason, _State) ->
 %%
 %% Helpers
 %%
+
+handle_request({direct, OtherId},
+               #register_entry{owner_id=Id, key=KeyES},
+               #state{communication_key_table=Table, 
+                      callback_module=Module, user_context=Context}=State) ->
+    case check_allowed(communicate, [{id, Id}, {other_id, OtherId}], Module, Context) of
+        ok ->
+            %% Generate a key.
+            K_AB = keyserver_crypto:generate_key(),
+            
+            %% Timestamp
+            Timestamp = keyserver_utils:unix_time(), %% 64 bit integer.
+
+            %% Lifetime
+            Lifetime = 3600, % in seconds one hour (todo, make variable)
+            
+            %% Lookup communication key of B
+            %% Create ticket for Other, encrypt under B key
+            TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
+                             
+            %% Lookup key of other user.
+            {ok, KeyOtherS} = lookup_key(Table, OtherId),
+            TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
+
+            %% Create reply encrypt under KeyES
+            %% IV1 = keyserver_crypto:generate_iv(),
+            %% Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
+
+            {ok, State};
+        {error, Reason} ->
+            {not_allowed, State}
+    end;
+
+handle_request({publish, Topic},
+               #register_entry{owner_id=Id},
+               #state{session_key_table=SessionKeyTable,
+                      callback_module=Module, user_context=Context}=State) ->
+    case check_allowed(publish, [{id, Id}, {topic, Topic}], Module, Context) of
+        ok -> 
+            %% Generate a key id. (hash of key?), link to the topic?
+            SessionKeyId = keyserver_crypto:generate_key_id(),
+            SessionKey = keyserver_crypto:generate_key(),
+                             
+            Timestamp = keyserver_utils:unix_time(),
+            ValidityPeriod = 3600, % 
+            ExpirationTime = Timestamp + ValidityPeriod,
+                              
+            %% Insert the session key in the table
+            Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
+                                     expiration_time=ExpirationTime, validity_period=ValidityPeriod},
+            true = ets:insert_new(SessionKeyTable, Record),
+
+            %% TODO, make response
+            io:fwrite(standard_error, "TODO: we can create a reply.~p~n", [SessionKeyId]),
+
+            {ok, State};
+        {error, Reason} ->
+            {not_allowed, State}
+    end;
+handle_request({subscribe, SessionKeyId, Topic},
+               #register_entry{owner_id=Id},
+               #state{session_key_table=SessionKeyTable,
+                      callback_module=Module, user_context=Context}=State) ->
+    case check_allowed(subscribe, [{id, Id}, {topic, Topic}, {key_id, SessionKeyId}], Module, Context) of
+        ok ->
+            io:fwrite("secure subscribe request~n", []),
+
+            case ets:lookup(SessionKeyTable, SessionKeyId) of
+                [] ->
+                    {{error, nokey}, State};
+                [#session_record{key=SessionKey, 
+                                 expiration_time=ExpirationTime}=SesRec] ->
+                    io:fwrite("session-record: ~p~n", [SesRec]),
+                    %% Construct the reply...
+
+                    Timestamp = keyserver_utils:unix_time(),
+                    ValidityPeriod = ExpirationTime - Timestamp,
+
+                    %% IV1 = keyserver_crypto:generate_iv(),
+                    %% Reply = keyserver_crypto:encrypt_session_key(ServerNonce1,
+                    %%                                             SessionKeyId, SessionKey, 
+                    %%                                             Timestamp, ValidityPeriod, KeyES, IV1),
+                    {ok, State}
+            end;
+        {error, Reason} ->
+            {not_allowed, State}
+    end;
+handle_request(Id, {error, Reason}, #state{}=State) ->
+    {ok, State}.
+    
 
 -spec inc_server_nonce(binary(), ets:tab()) -> integer().
 inc_server_nonce(Id, Table) ->
