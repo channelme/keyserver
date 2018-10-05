@@ -40,6 +40,7 @@
          code_change/3, terminate/2]).
 
 -record(state, {
+    name,
     public_key,
     private_key,
 
@@ -56,7 +57,7 @@
     nonce,
     server_nonce,
     expiration_time,
-    validity_period
+    lifetime  
 }).
 
 -record(session_record, {
@@ -64,7 +65,7 @@
     key,
     owner_id,
     expiration_time,
-    validity_period
+    lifetime
 }).
 
 %%
@@ -75,7 +76,7 @@ start_link(Name, {_PublicKey, _PrivateKey}=KeyPair, CallbackModule, UserContext)
     CommunicationKeyTable = ensure_communication_key_table(Name),
     SessionKeyTable = ensure_session_key_table(Name),
 
-    case gen_server:start_link({local, Name}, ?MODULE, [KeyPair, CallbackModule, UserContext], []) of
+    case gen_server:start_link({local, Name}, ?MODULE, [Name, KeyPair, CallbackModule, UserContext], []) of
         {ok, Pid} ->
             true = ets:give_away(CommunicationKeyTable, Pid, communication_key_table),
             true = ets:give_away(SessionKeyTable, Pid, session_key_table),
@@ -107,8 +108,9 @@ request(Name, Id, Message, IV) ->
 %% gen_server callbacks
 %%
 
-init([{PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
-    State = #state{public_key=PublicKey, private_key=PrivateKey,
+init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
+    State = #state{name=z_convert:to_binary(Name), 
+                   public_key=PublicKey, private_key=PrivateKey,
                    callback_module=CallbackModule, user_context=UserContext},
     {ok, State}.
 
@@ -137,22 +139,27 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
             {reply, {error, already_connected}, State}
     end;
 
-handle_call({request, Id, Message, IV}, _From, #state{communication_key_table=Table}=State) ->
+handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_key_table=Table}=State) ->
     case ets:lookup(Table, Id) of
         [] -> 
             {reply, {error, not_found}, State};
-        [#register_entry{owner_id=Id, key=KeyES, nonce=StoredNonce, server_nonce=ServerNonce}=Entry] ->
+        [#register_entry{owner_id=Id, key=KeyES, nonce=StoredNonce}=Entry] ->
             case keyserver_crypto:decrypt_request(Id, Message, KeyES, IV) of
                 {error, _}=E ->
                     {reply, E, State};
                 {ok, RequestNonce, Request} ->
                     io:fwrite(standard_error, "TODO: Replay detection: ~p: ~p~n", [RequestNonce, StoredNonce]),
                     {Response, State1} = handle_request(Request, Entry, State),
-                    ServerNonce1 = inc_server_nonce(Id, Table),
 
                     io:fwrite(standard_error, "Request: ~p, ~p~n", [Request, Response]),
+                    
+                    IVS = keyserver_crypto:generate_iv(),
+                    ServerNonce1 = inc_server_nonce(Id, Table),
+
                     io:fwrite(standard_error, "ServerNonce: ~p~n", [ServerNonce1]),
-                    {reply, Response, State1}
+                    EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce1, Response, KeyES, IVS),
+
+                    {reply, {ok, EncryptedResponse, IVS}, State1}
             end
     end;
 
@@ -226,11 +233,11 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
                              SessionKey = keyserver_crypto:generate_key(),
                              
                              Timestamp = keyserver_utils:unix_time(),
-                             ValidityPeriod = 3600, % 
-                             ExpirationTime = Timestamp + ValidityPeriod,
+                             Lifetime = 3600, % 
+                             ExpirationTime = Timestamp + Lifetime,
                               
                              Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
-                                                      expiration_time=ExpirationTime, validity_period=ValidityPeriod},
+                                                      expiration_time=ExpirationTime, lifetime=Lifetime},
                              true = ets:insert_new(SessionTable, Record),
 
                              ServerNonce1 = inc_server_nonce(Id, Table),
@@ -243,7 +250,7 @@ handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communicati
 
                              Reply = keyserver_crypto:encrypt_secure_publish_response(ServerNonce1,
                                          SessionKeyId, SessionKey, 
-                                         Timestamp, ValidityPeriod, KeyES, IV1),
+                                         Timestamp, Lifetime, KeyES, IV1),
 
                              {reply, {ok, ServerNonce1, IV1, Reply}, State};
                          {error, _}=Error ->
@@ -279,13 +286,13 @@ handle_call({subscribe_request, Id, Nonce, Message, IV}, _From, #state{communica
                                      %% Construct the reply...
 
                                      Timestamp = keyserver_utils:unix_time(),
-                                     ValidityPeriod = ExpirationTime - Timestamp,
+                                     Lifetime = ExpirationTime - Timestamp,
 
                                      IV1 = keyserver_crypto:generate_iv(),
 
                                      Reply = keyserver_crypto:encrypt_session_key(ServerNonce1,
                                          SessionKeyId, SessionKey, 
-                                         Timestamp, ValidityPeriod, KeyES, IV1),
+                                         Timestamp, Lifetime, KeyES, IV1),
                                      {reply, {ok, ServerNonce1, IV1, Reply}, State}
                              end;
                          {error, _}=Error ->
@@ -347,14 +354,13 @@ handle_request({direct, OtherId},
             TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
                              
             %% Lookup key of other user.
+            %% TODO: handle other id does not exist...
             {ok, KeyOtherS} = lookup_key(Table, OtherId),
             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
 
-            %% Create reply encrypt under KeyES
-            %% IV1 = keyserver_crypto:generate_iv(),
-            %% Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
+            Response = {tickets, TicketA, TicketB},
 
-            {ok, State};
+            {Response, State};
         {error, Reason} ->
             {not_allowed, State}
     end;
@@ -370,18 +376,17 @@ handle_request({publish, Topic},
             SessionKey = keyserver_crypto:generate_key(),
                              
             Timestamp = keyserver_utils:unix_time(),
-            ValidityPeriod = 3600, % 
-            ExpirationTime = Timestamp + ValidityPeriod,
+            Lifetime = 3600, % 
+            ExpirationTime = Timestamp + Lifetime,
                               
             %% Insert the session key in the table
             Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
-                                     expiration_time=ExpirationTime, validity_period=ValidityPeriod},
+                                     expiration_time=ExpirationTime, lifetime=Lifetime},
             true = ets:insert_new(SessionKeyTable, Record),
 
-            %% TODO, make response
-            io:fwrite(standard_error, "TODO: we can create a reply.~p~n", [SessionKeyId]),
+            Response = {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime},
 
-            {ok, State};
+            {Response, State};
         {error, Reason} ->
             {not_allowed, State}
     end;
@@ -398,17 +403,11 @@ handle_request({subscribe, SessionKeyId, Topic},
                     {{error, nokey}, State};
                 [#session_record{key=SessionKey, 
                                  expiration_time=ExpirationTime}=SesRec] ->
-                    io:fwrite("session-record: ~p~n", [SesRec]),
-                    %% Construct the reply...
-
                     Timestamp = keyserver_utils:unix_time(),
-                    ValidityPeriod = ExpirationTime - Timestamp,
+                    Lifetime = ExpirationTime - Timestamp, % What is left of the validity period
 
-                    %% IV1 = keyserver_crypto:generate_iv(),
-                    %% Reply = keyserver_crypto:encrypt_session_key(ServerNonce1,
-                    %%                                             SessionKeyId, SessionKey, 
-                    %%                                             Timestamp, ValidityPeriod, KeyES, IV1),
-                    {ok, State}
+                    Response = {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime},
+                    {Response, State}
             end;
         {error, Reason} ->
             {not_allowed, State}

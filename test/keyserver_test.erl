@@ -41,9 +41,8 @@ keyserver_test_() ->
 
       {"Connect to the keyserver", fun connect/0},
       {"Setup point to point", fun point_to_point/0},
-      {"Secure publish", fun secure_publish/0},
       {"Secure subscribe", fun secure_subscribe/0},
-      {"Secure subscribe - new style", fun secure_subscribe_new/0}
+      {"Secure publish", fun secure_publish/0}
      ]
     }.
 
@@ -88,28 +87,6 @@ point_to_point() ->
     ok = keyserver:stop(test).
 
 
-secure_publish() ->
-    {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
-    {ok, ServerEncKey} = keyserver:public_enc_key(test),
-
-    AliceKey = keyserver_crypto:generate_key(),
-    AliceNonce = keyserver_crypto:generate_nonce(),
-
-    %% 
-    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
-        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
-
-    R = keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({publish_response, _, _, _, _, _}, R),
-    {publish_response, SesKeyId, SesKey, _Ts, _Lt, _N} = R,
-    
-    %% We know the key, so we don't have to do a secure subscribe
-    Message = <<"Hallo allemaal">>,
-    CipherText = keyserver_crypto:encrypt_secure_publish(Message, SesKeyId, SesKey),
-    {ok, Message} = keyserver_crypto:decrypt_secure_publish(CipherText, SesKeyId, SesKey),
-
-    ok = keyserver:stop(test).
-  
 secure_subscribe() ->
     {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
     {ok, ServerEncKey} = keyserver:public_enc_key(test),
@@ -121,20 +98,21 @@ secure_subscribe() ->
         keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
 
     %% Register a key
-    R = keyserver:secure_publish(test, "alice", <<"test/test/test">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({publish_response, _, _, _, _, _}, R),
-    {publish_response, SesKeyId, SesKey, _Ts, _Lt, _N} = R,
+    R = keyserver:secure_publish(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({ok, _, {session_key, _, _, _, _}}, R),
     
+    {ok, _Nonce, {session_key, SessionKeyId, SessionKey, Timestamp, Lifetie}} = R,
+
     %% Now it must be possible to retrieve the key.
 
     %% 
-    SR = keyserver:secure_subscribe(test, "alice", SesKeyId, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    SR = keyserver:secure_subscribe(test, "alice", SessionKeyId, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
     ?assertMatch({session_key, _, _, _, _, _}, SR),
     {session_key, SesKeyId, SesKey, _Ts1, _Lt1, _N1} = SR,
     
     ok = keyserver:stop(test).
 
-secure_subscribe_new() ->
+secure_publish() ->
     {ok, _SupPid} = keyserver:start(test, ?MODULE, []),
     {ok, ServerEncKey} = keyserver:public_enc_key(test),
 
@@ -142,13 +120,13 @@ secure_subscribe_new() ->
     AliceNonce = keyserver_crypto:generate_nonce(),
 
     {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
-        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+        keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
-    io:fwrite("YEAH~n", []),
+    R = keyserver:secure_publish(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
 
-    R = keyserver:secure_publish_new(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({publish_response, _, _, _, _, _}, R),
-    {publish_response, SesKeyId, SesKey, _Ts, _Lt, _N} = R,
-    
+    ?assertMatch({ok, _Nonce, {session_key, _, _, _, _}}, R),
+
+    {ok, Nonce, {session_key, SessionKeyId, SessionKey, Timestamp, Lifetie}} = R,
+
 
     ok = keyserver:stop(test).

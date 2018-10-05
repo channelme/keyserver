@@ -24,6 +24,8 @@
 -define(PUBLISH, $P).
 -define(SUBSCRIBE, $S).
 -define(DIRECT, $D).
+-define(TICKETS, $T).
+-define(SESSION_KEY, $K).
 
 -export([
     generate_key/0,
@@ -49,17 +51,14 @@
          
     create_p2p_ticket/5,
 
-    encrypt_secure_publish_request/5,
-    decrypt_secure_publish_request/4,
-
-    encrypt_secure_publish_response/7,
-    decrypt_secure_publish_response/4,
-
     encrypt_session_key/7,
     decrypt_session_key/4,
          
     encrypt_request/5,
     decrypt_request/4,
+         
+    encrypt_response/5,
+    decrypt_response/4,
 
     encrypt_secure_publish/3,
     decrypt_secure_publish/3,
@@ -218,33 +217,33 @@ decrypt_p2p_response(Nonce, Message, Key, IV) ->
     end.
     
 
-encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    IdHash = keyserver_crypto:hash(Id),
-    Message = <<"publish_request", EncNonce/binary, IdHash/binary, Topic/binary>>,
-    encrypt_message(Message, EncNonce, Key, IV).
+%encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV) ->
+%    EncNonce = encode_nonce(Nonce),
+%    IdHash = keyserver_crypto:hash(Id),
+%    Message = <<"publish_request", EncNonce/binary, IdHash/binary, Topic/binary>>,
+%    encrypt_message(Message, EncNonce, Key, IV).
 
-decrypt_secure_publish_request(Nonce, Message, Key, IV) -> 
-    case decrypt_message(Message, Nonce, Key, IV) of
-        <<"publish_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, Topic/binary>> ->
-            case Nonce =:= decode_nonce(EncNonce) of
-                false ->
-                    {error, nonce};
-                true ->
-                    {publish_request, IdHash, Topic, Nonce}
-            end;
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=Error -> Error
-    end.
+%decrypt_secure_publish_request(Nonce, Message, Key, IV) -> 
+%    case decrypt_message(Message, Nonce, Key, IV) of
+%        <<"publish_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, Topic/binary>> ->
+%            case Nonce =:= decode_nonce(EncNonce) of
+%                false ->
+%                    {error, nonce};
+%                true ->
+%                    {publish_request, IdHash, Topic, Nonce}
+%            end;
+%        Bin when is_binary(Bin) -> {error, plain_msg};
+%        {error, _}=Error -> Error
+%    end.
 
-encrypt_secure_publish_response(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    
-    Message = <<"publish_response", EncNonce/binary, 
-                SessionKeyId/binary, SessionKey/binary,
-                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
-
-    encrypt_message(Message, EncNonce, Key, IV).
+%encrypt_secure_publish_response(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
+%    EncNonce = encode_nonce(Nonce),
+%    
+%    Message = <<"publish_response", EncNonce/binary, 
+%                SessionKeyId/binary, SessionKey/binary,
+%                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
+%
+%    encrypt_message(Message, EncNonce, Key, IV).
 
 %% TODO: same as above.
 encrypt_session_key(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
@@ -271,20 +270,20 @@ decrypt_session_key(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
 
-decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
-     case decrypt_message(Message, Nonce, Key, IV) of
-        <<"publish_response", EncNonce:?NONCE_BYTES/binary, 
-          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
-          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
-            case Nonce =:= decode_nonce(EncNonce) of
-                false ->
-                    {error, nonce};
-                true ->
-                    {publish_response, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
-            end;
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=Error -> Error
-    end.
+%decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
+%     case decrypt_message(Message, Nonce, Key, IV) of
+%        <<"publish_response", EncNonce:?NONCE_BYTES/binary, 
+%          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
+%          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
+%            case Nonce =:= decode_nonce(EncNonce) of
+%                false ->
+%                    {error, nonce};
+%                true ->
+%                    {publish_response, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
+%            end;
+%        Bin when is_binary(Bin) -> {error, plain_msg};
+%        {error, _}=Error -> Error
+%    end.
 
 
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
@@ -323,11 +322,10 @@ decrypt_secure_subscribe_request(Nonce, Message, Key, IV) ->
      end.
 
 encrypt_request(Id, Nonce, Request, Key, IV) ->
-    IdHash = keyserver_crypto:hash(Id),
     EncNonce = encode_nonce(Nonce),
     Message = encode_request(Request),
     M = <<?V1, EncNonce/binary, Message/binary>>,   
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {IdHash, M, ?AES_GCM_TAG_SIZE}),
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
 encode_request({direct, OtherId}) ->
@@ -355,10 +353,9 @@ decode_request(_) ->
                              {error, ciphertext} | 
                              {error, cipher_integrity}.
 decrypt_request(Id, Message, Key, IV) ->
-    IdHash = keyserver_crypto:hash(Id),
     case Message of
         <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
-            case crypto:block_decrypt(aes_gcm, Key, IV, {IdHash, Msg, Tag}) of
+            case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
                 <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
                     {ok, decode_nonce(EncNonce), decode_request(Protocol)};
                 error -> 
@@ -369,6 +366,47 @@ decrypt_request(Id, Message, Key, IV) ->
         _ ->
             {error, ciphertext}
     end.
+
+encrypt_response(Id, Nonce, Response, Key, IV) -> 
+    EncNonce = encode_nonce(Nonce),
+    Message = encode_response(Response),
+    M = <<?V1, EncNonce/binary, Message/binary>>,   
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
+    <<Tag/binary, $:, Msg/binary>>.
+
+
+decrypt_response(Id, Message, Key, IV) ->
+    %% TODO: merge with decrypt request.
+    case Message of
+        <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
+            case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
+                <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
+                    {ok, decode_nonce(EncNonce), decode_response(Protocol)};
+                error -> 
+                    {error, cipher_integrity};
+                _ ->
+                    {error, plaintext}
+            end;
+        _ ->
+            {error, ciphertext}
+    end.
+
+encode_response({tickets, TicketA, TicketB}) ->
+    <<?TICKETS, (length_prefix(TicketA))/binary, (length_prefix(TicketB))/binary>>;
+encode_response({session_key, KeyId, Key, Timestamp, Lifetime}) ->
+    <<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binary, Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>.
+%% TODO: add error handling
+    
+decode_response(<<?TICKETS, Tickets/binary>>) ->
+    {TicketA, Rest} = get_length_prefixed_data(Tickets),
+    {TicketB, _} = get_length_prefixed_data(Rest),
+    {tickets, TicketA, TicketB};
+decode_response(<<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binary, 
+                  Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>) ->
+    {session_key, KeyId, Key, Timestamp, Lifetime};
+decode_response(_) ->
+    {error, unknown_response}.
+
 
  
 %%
