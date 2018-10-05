@@ -210,7 +210,7 @@ handle_request({direct, OtherId},
             Response = {tickets, TicketA, TicketB},
 
             {Response, State};
-        {error, Reason} ->
+        {error, _Reason} ->
             {not_allowed, State}
     end;
 
@@ -236,7 +236,7 @@ handle_request({publish, Topic},
             Response = {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime},
 
             {Response, State};
-        {error, Reason} ->
+        {error, _Reason} ->
             {not_allowed, State}
     end;
 handle_request({subscribe, SessionKeyId, Topic},
@@ -251,17 +251,17 @@ handle_request({subscribe, SessionKeyId, Topic},
                 [] ->
                     {{error, nokey}, State};
                 [#session_record{key=SessionKey, 
-                                 expiration_time=ExpirationTime}=SesRec] ->
+                                 expiration_time=ExpirationTime}] ->
                     Timestamp = keyserver_utils:unix_time(),
                     Lifetime = ExpirationTime - Timestamp, % What is left of the validity period
 
                     Response = {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime},
                     {Response, State}
             end;
-        {error, Reason} ->
+        {error, _Reason} ->
             {not_allowed, State}
     end;
-handle_request(Id, {error, Reason}, #state{}=State) ->
+handle_request(_Id, {error, _Reason}, #state{}=State) ->
     {ok, State}.
     
 
@@ -276,35 +276,6 @@ lookup_key(Table, Id) ->
         [#register_entry{owner_id=Id, key=KeyES}] -> {ok, KeyES}
     end.
 
-check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce, Module, Context) ->
-    check_all([
-               fun() -> check_hash(Id, IdHash) end,
-               fun() -> check_equal(Nonce, EncryptedNonce) end,
-               fun() -> check_allowed(communicate, [{id, Id}, {other_id, OtherId}], Module, Context) end
-              ]).
-
-check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, Module, Context) ->
-     check_all([
-               fun() -> check_hash(Id, IdHash) end,
-               fun() -> check_equal(Nonce, EncryptedNonce) end,
-               fun() -> check_allowed(publish, [{id, Id}, {topic, Topic}], Module, Context) end
-              ]).
-
-check_subscribe_request(Id, IdHash, KeyId, Topic, Nonce, EncryptedNonce, Module, Context) ->
-     check_all([
-               fun() -> check_hash(Id, IdHash) end,
-               fun() -> check_equal(Nonce, EncryptedNonce) end,
-               fun() -> check_allowed(subscribe, [{id, Id}, {topic, Topic}, {key_id, KeyId}], Module, Context) end
-              ]).
-
-
-check_all([]) -> ok;
-check_all([Check|Rest]) ->
-    case Check() of
-        ok -> check_all(Rest);
-        %error -> error; % no check returns this according to dialyzr
-        {error, _}=E -> E
-    end.
 
 check_allowed(What, Args, Module, Context) when is_atom(What) andalso is_list(Args) ->
     case catch Module:is_allowed(What, Args, Context) of
@@ -312,22 +283,6 @@ check_allowed(What, Args, Module, Context) when is_atom(What) andalso is_list(Ar
         false -> {error, not_allowed};
         Response -> {error, {unexpected_response, Response, Module, Context}}
     end.
-
--spec check_equal(term(), term()) -> ok | {error, not_equal}.
-check_equal(A, B) ->
-    case A =:= B of
-        true -> ok;
-        false -> {error, not_equal}
-    end.
-
--spec check_hash(iodata(), binary()) -> ok | {error, hash_not_equal}.
-check_hash(Value, Hash) when is_binary(Hash) andalso size(Hash) =:= ?HASH_BYTES ->
-    ComputedHash = keyserver_crypto:hash(Value),
-    case ComputedHash =:= Hash of
-        true -> ok;
-        false -> {error, hash_not_equal}
-    end.
-
 
 -spec create_p2p_ticket(keyserver_crypto:key(), keyserver_util:timestamp(), non_neg_integer(), binary(), keyserver_crypto:key()) -> keyserver_crypto:p2p_ticket().
 create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
