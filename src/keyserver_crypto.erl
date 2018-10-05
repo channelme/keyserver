@@ -21,6 +21,7 @@
 -define(AES_GCM_TAG_SIZE, 16). % The security of GCM depends on the tag size , so we use the full 128 bits.
 
 -define(V1, $1).
+-define(HELLO_ANSWER, $A).
 -define(PUBLISH, $P).
 -define(SUBSCRIBE, $S).
 -define(DIRECT, $D).
@@ -39,9 +40,6 @@
 
     encrypt_hello/3,
     decrypt_hello/2,
-
-    encrypt_hello_answer/3,
-    decrypt_hello_answer/4,
 
     create_p2p_ticket/5,
 
@@ -119,7 +117,6 @@ encode_nonce(Nonce) when Nonce >= 0 andalso Nonce < ?MAX_NONCE ->
 hash(Data) ->
     crypto:hash(sha256, Data).
     
-
 %%
 %% Hello
 %%
@@ -137,22 +134,6 @@ decrypt_hello(Message, PrivateKey) ->
         Bin when is_binary(Bin) ->
             {error, message}
     end.
-
-encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce}, EncKey, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    EncServerNonce = encode_nonce(ServerNonce),
-    Message = <<"hello_answer", KeyES/binary, EncServerNonce/binary, EncNonce/binary>>,
-    encrypt_message(Message, EncNonce, EncKey, IV).
-
-decrypt_hello_answer(Nonce, Message, EncKey, IV) ->
-    %% TODO: no check on the nonce is done here.
-    case decrypt_message(Message, Nonce, EncKey, IV) of
-        <<"hello_answer", KeyES:?KEY_BYTES/binary, SNonce:?NONCE_BYTES/binary, EncNonce:?NONCE_BYTES/binary>> -> 
-            {hello_answer, KeyES, decode_nonce(SNonce), decode_nonce(EncNonce)};
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=E -> E
-    end.
-
 
 % -spec create_p2p_ticket() -> p2p_ticket().
 create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
@@ -272,7 +253,12 @@ decrypt_response(Id, Message, Key, IV) ->
 encode_response({tickets, TicketA, TicketB}) ->
     <<?TICKETS, (length_prefix(TicketA))/binary, (length_prefix(TicketB))/binary>>;
 encode_response({session_key, KeyId, Key, Timestamp, Lifetime}) ->
-    <<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binary, Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>.
+    <<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binary, Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>;
+encode_response({hello_answer, Key, Nonce}) ->
+    EncodedNonce = encode_nonce(Nonce),
+    <<?HELLO_ANSWER, Key:?KEY_BYTES/binary, EncodedNonce/binary>>.
+
+
 %% TODO: add error handling
     
 decode_response(<<?TICKETS, Tickets/binary>>) ->
@@ -282,6 +268,8 @@ decode_response(<<?TICKETS, Tickets/binary>>) ->
 decode_response(<<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binary, 
                   Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>) ->
     {session_key, KeyId, Key, Timestamp, Lifetime};
+decode_response(<<?HELLO_ANSWER, Key:?KEY_BYTES/binary, EncodedNonce/binary>>) ->
+    {hello_response, Key, decode_nonce(EncodedNonce)};
 decode_response(_) ->
     {error, unknown_response}.
 

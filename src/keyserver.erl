@@ -50,12 +50,7 @@ connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) anda
     Message = keyserver_crypto:encrypt_hello(EncKey, Nonce, ServerEncKey),
      
     %% Server handles the request.
-    case keyserver_server:connect_to_server(Name, Id, Message) of
-        {ok, SNonce1, IVS, Result} ->
-            %% TODO: replay check
-            keyserver_crypto:decrypt_hello_answer(SNonce1, Result, EncKey, IVS);
-        {error, _} = Error -> Error
-    end;
+    handle_response(keyserver_server:connect_to_server(Name, Id, Message), Name, EncKey);
 
 connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) ->
     connect_to_server(Name, z_convert:to_binary(Id), EncKey, Nonce, ServerEncKey).
@@ -80,9 +75,11 @@ secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) when is_binary(Id) andalso 
 %%
 
 handle_request(Name, Id, EncryptedRequest, Key, IV) ->
-    case keyserver_server:request(Name, Id, EncryptedRequest, IV) of
-        {ok, Result, IVS} ->
-            %% TODO: replay check
-            keyserver_crypto:decrypt_response(z_convert:to_binary(Name), Result, Key, IVS);
-        {error, _} = Error -> Error
-    end.
+    handle_response(keyserver_server:request(Name, Id, EncryptedRequest, IV), Name, Key).
+
+handle_response({ok, Result, IVS}, Name, Key) ->
+    %% TODO: replay check
+    keyserver_crypto:decrypt_response(z_convert:to_binary(Name), Result, Key, IVS);
+handle_response({error, _}=Error, _Name, _Key) ->
+    Error.
+    

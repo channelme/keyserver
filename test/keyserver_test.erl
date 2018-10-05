@@ -53,8 +53,7 @@ connect() ->
     Key = keyserver_crypto:generate_key(),
     Nonce = keyserver_crypto:generate_nonce(),
 
-    {hello_answer, _KeyES, _ServerNonce, Nonce1} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
-
+    {ok, _ServerNonce, {hello_response, _KeyES, Nonce1}} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
     %% Check the response
     %%
     %% Nonce1 should be > Nonce (in this case +1)
@@ -72,10 +71,10 @@ point_to_point() ->
     BobKey = keyserver_crypto:generate_key(),
     BobNonce = keyserver_crypto:generate_nonce(),
 
-    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} = 
+    {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
         keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
-    {hello_answer, KeyBobServer, _, _} =
+    {ok, _, {hello_response, KeyBobServer, _}} =
         keyserver:connect_to_server(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
 
     R = keyserver:p2p_request(test, <<"alice">>, <<"bob">>, AliceNonce1, KeyAliceServer),
@@ -91,7 +90,7 @@ secure_subscribe() ->
     AliceKey = keyserver_crypto:generate_key(),
     AliceNonce = keyserver_crypto:generate_nonce(),
 
-    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
+    {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
         keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
 
     %% Register a key
@@ -117,14 +116,12 @@ secure_publish() ->
     AliceKey = keyserver_crypto:generate_key(),
     AliceNonce = keyserver_crypto:generate_nonce(),
 
-    {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} =
+    {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
         keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
     R = keyserver:secure_publish(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
 
     ?assertMatch({ok, _Nonce, {session_key, _, _, _, _}}, R),
-
     {ok, Nonce, {session_key, SessionKeyId, SessionKey, Timestamp, Lifetie}} = R,
-
 
     ok = keyserver:stop(test).

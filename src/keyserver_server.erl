@@ -104,7 +104,7 @@ init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
 
 handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=undefined}=State) ->
     {reply, {error, not_ready}, State};
-handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=PrivateKey, communication_key_table=Table}=State) ->
+handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name, private_key=PrivateKey, communication_key_table=Table}=State) ->
     case ets:lookup(Table, Id) of
         [] ->
             case keyserver_crypto:decrypt_hello(CipherText, PrivateKey) of
@@ -113,15 +113,14 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
                     Nonce1 = keyserver_crypto:inc_nonce(Nonce),
 
                     KeyES = keyserver_crypto:generate_key(),
-                    IV = keyserver_crypto:generate_iv(),
+                    IVS = keyserver_crypto:generate_iv(),
 
                     %% Store the communication key for later use.
-                    true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, nonce=Nonce1, server_nonce=ServerNonce}),
+                    true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, 
+                                                                 nonce=Nonce1, server_nonce=ServerNonce}),
 
-                    %CipherMsg = keyserver_crypto:encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce1}, EEncKey, IV),
-                    
                     Response = {hello_answer, KeyES, Nonce1},
-                    EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, KeyES, IVS),
+                    EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, EEncKey, IVS),
 
                     {reply, {ok, EncryptedResponse, IVS}, State};
                 _ ->
