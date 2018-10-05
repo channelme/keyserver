@@ -43,12 +43,6 @@
     encrypt_hello_answer/3,
     decrypt_hello_answer/4,
 
-    encrypt_p2p_request/5,
-    decrypt_p2p_request/4,
-         
-    encrypt_p2p_response/5,
-    decrypt_p2p_response/4,
-         
     create_p2p_ticket/5,
 
     encrypt_session_key/7,
@@ -62,9 +56,6 @@
 
     encrypt_secure_publish/3,
     decrypt_secure_publish/3
-
-    %encrypt_secure_subscribe_request/6,
-    %decrypt_secure_subscribe_request/4
 ]).
 
 -include("keyserver.hrl").
@@ -171,52 +162,6 @@ create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     <<"p2p-ticket", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
 
 
-%%
-%% p2p requests
-%%
-    
-encrypt_p2p_request(Id, OtherId, Nonce, Key, IV) when is_binary(Id) andalso is_binary(OtherId) ->
-    IdHash = keyserver_crypto:hash(Id),
-    EncNonce = encode_nonce(Nonce),
-    Message = <<"p2p_request", EncNonce/binary, IdHash/binary, OtherId/binary>>,
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
-    <<Tag/binary, $:, Msg/binary>>.
-
-decrypt_p2p_request(Nonce, Message, Key, IV) ->
-    case decrypt_message(Message, Nonce, Key, IV) of
-        <<"p2p_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, OtherId/binary>> ->
-            DecNonce = decode_nonce(EncNonce),
-            case Nonce =:= DecNonce of
-                true -> {p2p_request, IdHash, OtherId, DecNonce};
-                false -> {error, nonce}
-            end;
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=Error -> Error
-    end.
-
-encrypt_p2p_response(Nonce, TicketA, TicketB, Key, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    TA = length_prefix(TicketA),
-    TB = length_prefix(TicketB),
-    Message = <<"p2p_response", EncNonce/binary, TA/binary, TB/binary>>,
-    encrypt_message(Message, EncNonce, Key, IV).
-
-decrypt_p2p_response(Nonce, Message, Key, IV) ->
-    case decrypt_message(Message, Nonce, Key, IV) of
-        <<"p2p_response", EncNonce:?NONCE_BYTES/binary, Tickets/binary>> ->
-            case Nonce =:= decode_nonce(EncNonce) of
-                false ->
-                    {error, nonce};
-                true ->
-                    {Ticket1, Rest} = get_length_prefixed_data(Tickets),
-                    {Ticket2, <<>>} = get_length_prefixed_data(Rest),
-                    {p2p_response, Nonce, Ticket1, Ticket2}
-            end;
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=Error -> Error
-    end.
-    
-
 %% TODO: same as above.
 encrypt_session_key(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
@@ -254,7 +199,6 @@ decrypt_secure_publish(<<"sec-pub", IV:?IV_BYTES/binary, $:, Tag:?AES_GCM_TAG_SI
         {error, _}=Error -> Error
     end.
     
-
 encrypt_request(Id, Nonce, Request, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
     Message = encode_request(Request),
@@ -341,8 +285,6 @@ decode_response(<<?SESSION_KEY, KeyId:?KEY_ID_BYTES/binary, Key:?KEY_BYTES/binar
 decode_response(_) ->
     {error, unknown_response}.
 
-
- 
 %%
 %% Helpers
 %%

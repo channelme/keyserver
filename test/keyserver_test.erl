@@ -73,16 +73,13 @@ point_to_point() ->
     BobNonce = keyserver_crypto:generate_nonce(),
 
     {hello_answer, KeyAliceServer, _ServerNonce, AliceNonce1} = 
-        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+        keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
     {hello_answer, KeyBobServer, _, _} =
-        keyserver:connect_to_server(test, "bob", BobKey, BobNonce, ServerEncKey),
+        keyserver:connect_to_server(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
 
-    %% 
-    {ok, SNonce1, IVS, Result} = keyserver:p2p_request(test, "alice", "bob", AliceNonce1, KeyAliceServer),
-
-    ?assertMatch({p2p_response, _,_,_}, 
-                 keyserver_crypto:decrypt_p2p_response(SNonce1, Result, KeyAliceServer, IVS)),
+    R = keyserver:p2p_request(test, <<"alice">>, <<"bob">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({ok, _, {tickets, _, _}}, R),
 
     ok = keyserver:stop(test).
 
