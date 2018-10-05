@@ -28,10 +28,6 @@
     public_enc_key/1,
     connect_to_server/3,  
 
-    p2p_request/5, 
-    publish_request/5,
-    subscribe_request/5,
-
     request/4      
 ]).
 
@@ -92,15 +88,6 @@ connect_to_server(Name, Id, Message) ->
     gen_server:call(Name, {connect_to_server, Id, Message}).
     
 
-p2p_request(Name, Id, Nonce, Message, IV) ->
-    gen_server:call(Name, {p2p_request, Id, Nonce, Message, IV}).
-
-publish_request(Name, Id, Nonce, Message, IV) ->
-    gen_server:call(Name, {publish_request, Id, Nonce, Message, IV}).
-    
-subscribe_request(Name, Id, Nonce, Message, IV) -> 
-    gen_server:call(Name, {subscribe_request, Id, Nonce, Message, IV}).
-    
 request(Name, Id, Message, IV) ->
     gen_server:call(Name, {request, Id, Message, IV}).
 
@@ -162,148 +149,6 @@ handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_k
                     {reply, {ok, EncryptedResponse, IVS}, State1}
             end
     end;
-
-%  {p2p_request, Id, Nonce, Message, Message, IV}).
-handle_call({p2p_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table, 
-                                                                 callback_module=M, user_context=C}=State) ->
-     case ets:lookup(Table, Id) of
-         [] -> 
-             {reply, {error, not_found}, State};
-         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
-             
-             % Now, the stored nonce must be somewhat smaller than the received nonce. 
-             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
-
-             case keyserver_crypto:decrypt_p2p_request(Nonce, Message, KeyES, IV) of
-                 {p2p_request, IdHash, OtherId, EncryptedNonce} ->
-                     case check_p2p_request(Id, IdHash, OtherId, Nonce, EncryptedNonce, M, C) of
-                         ok ->
-                             %% Generate a key, and encrypt a ticket for Id, and OtherId
-                             %% Add a timestamp for max validity period.
-                             io:fwrite(standard_error, "We can create reply~n", []),
-
-                             %% Generate a key.
-                             K_AB = keyserver_crypto:generate_key(),
-
-                             %% Timestamp
-                             Timestamp = keyserver_utils:unix_time(), %% 64 bit integer.
-
-                             %% Lifetime
-                             Lifetime = 3600, % in seconds one hour (todo, make variable)
-                             
-                             %% Increase Nonce Server for the response
-                             ServerNonce1 = inc_server_nonce(Id, Table),
-
-                             %% Lookup communication key of B
-                             %% Create ticket for Other, encrypt under B key
-                             TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
-                             
-                             %% Lookup key of other user.
-                             {ok, KeyOtherS} = lookup_key(Table, OtherId),
-                             TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
-
-                             %% Create reply encrypt under KeyES
-                             IV1 = keyserver_crypto:generate_iv(),
-                             Reply = keyserver_crypto:encrypt_p2p_response(ServerNonce1, TicketA, TicketB, KeyES, IV1),
-                             
-                             {reply, {ok, ServerNonce1, IV1, Reply}, State};
-                         {error, _}=Error ->
-                             {reply, Error, State}
-                     end
-             end
-     end;
-
-handle_call({publish_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table,
-                                                                     session_key_table=SessionTable,
-                                                                     callback_module=M, user_context=C}=State) ->
-     case ets:lookup(Table, Id) of
-         [] -> 
-             {reply, {error, not_found}, State};
-         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
-              
-             % Now, the stored nonce must be somewhat smaller than the received nonce. 
-             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
-
-             case keyserver_crypto:decrypt_secure_publish_request(Nonce, Message, KeyES, IV) of
-                 {publish_request, IdHash, Topic, EncryptedNonce} ->
-                     case check_publish_request(Id, IdHash, Topic, Nonce, EncryptedNonce, M, C) of
-                         ok ->
-                             %% Generate a key id. (hash of key?), link to the topic?
-                             SessionKeyId = keyserver_crypto:generate_key_id(),
-                             SessionKey = keyserver_crypto:generate_key(),
-                             
-                             Timestamp = keyserver_utils:unix_time(),
-                             Lifetime = 3600, % 
-                             ExpirationTime = Timestamp + Lifetime,
-                              
-                             Record = #session_record{key_id=SessionKeyId, key=SessionKey, owner_id=Id, 
-                                                      expiration_time=ExpirationTime, lifetime=Lifetime},
-                             true = ets:insert_new(SessionTable, Record),
-
-                             ServerNonce1 = inc_server_nonce(Id, Table),
-
-                             %% TODO, make response
-                             io:fwrite(standard_error, "TODO: we can create a reply.~p~n", [SessionKeyId]),
-
-                             %% Create reply encrypt under KeyES
-                             IV1 = keyserver_crypto:generate_iv(),
-
-                             Reply = keyserver_crypto:encrypt_secure_publish_response(ServerNonce1,
-                                         SessionKeyId, SessionKey, 
-                                         Timestamp, Lifetime, KeyES, IV1),
-
-                             {reply, {ok, ServerNonce1, IV1, Reply}, State};
-                         {error, _}=Error ->
-                             {reply, Error, State}
-                     end;
-                 {error, _}=Error ->
-                     {reply, Error, State}
-             end
-     end;
-handle_call({subscribe_request, Id, Nonce, Message, IV}, _From, #state{communication_key_table=Table,
-                                                                     session_key_table=SessionTable,
-                                                                     callback_module=M, user_context=C}=State) ->
-     case ets:lookup(Table, Id) of
-         [] -> {reply, {error, not_found}, State};
-         [#register_entry{owner_id=Id, key=KeyES, nonce=_StoredNonce}] ->
-             % Now, the stored nonce must be somewhat smaller than the received nonce. 
-             io:fwrite(standard_error, "TODO: replay test!!!~n", []),
-             case keyserver_crypto:decrypt_secure_subscribe_request(Nonce, Message, KeyES, IV) of
-                 {subscribe_request, IdHash, SessionKeyId, Topic, EncryptedNonce} ->
-                     case check_subscribe_request(Id, IdHash, SessionKeyId, Topic, Nonce, EncryptedNonce, M, C) of
-                         ok ->
-                             io:fwrite("secure subscribe request~n", []),
-
-                             ServerNonce1 = inc_server_nonce(Id, Table),
-
-                             case ets:lookup(SessionTable, SessionKeyId) of
-                                 [] ->
-                                     {reply, {error, nokey}, State};
-                                 [#session_record{key=SessionKey, 
-                                                  expiration_time=ExpirationTime}=SesRec] ->
-
-                                     io:fwrite("session-record: ~p~n", [SesRec]),
-                                     %% Construct the reply...
-
-                                     Timestamp = keyserver_utils:unix_time(),
-                                     Lifetime = ExpirationTime - Timestamp,
-
-                                     IV1 = keyserver_crypto:generate_iv(),
-
-                                     Reply = keyserver_crypto:encrypt_session_key(ServerNonce1,
-                                         SessionKeyId, SessionKey, 
-                                         Timestamp, Lifetime, KeyES, IV1),
-                                     {reply, {ok, ServerNonce1, IV1, Reply}, State}
-                             end;
-                         {error, _}=Error ->
-                             {reply, Error, State}
-                     end;
-                 {error, _}=Error ->
-                     {reply, Error, State}
-             end
-     end;
-
- 
 
 handle_call(public_enc_key, _From, #state{public_key=PublicKey}=State) ->
     {reply, {ok, PublicKey}, State};
