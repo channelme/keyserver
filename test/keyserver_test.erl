@@ -105,10 +105,11 @@ secure_subscribe() ->
 
     %% Now it must be possible to retrieve the key.
 
-    %% 
-    SR = keyserver:secure_subscribe(test, "alice", SessionKeyId, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({session_key, _, _, _, _, _}, SR),
-    {session_key, SesKeyId, SesKey, _Ts1, _Lt1, _N1} = SR,
+    SR = keyserver:secure_subscribe(test, <<"alice">>, SessionKeyId, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
+    ?assertMatch({ok, _, {session_key, _, _, _, _}}, SR),
+
+    %% It should be the same key 
+    {ok, _, {session_key, SesKeyId, SesKey, _Ts1, _Lt1}} = SR,
     
     ok = keyserver:stop(test).
 

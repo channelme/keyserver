@@ -61,10 +61,10 @@
     decrypt_response/4,
 
     encrypt_secure_publish/3,
-    decrypt_secure_publish/3,
+    decrypt_secure_publish/3
 
-    encrypt_secure_subscribe_request/6,
-    decrypt_secure_subscribe_request/4
+    %encrypt_secure_subscribe_request/6,
+    %decrypt_secure_subscribe_request/4
 ]).
 
 -include("keyserver.hrl").
@@ -217,34 +217,6 @@ decrypt_p2p_response(Nonce, Message, Key, IV) ->
     end.
     
 
-%encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV) ->
-%    EncNonce = encode_nonce(Nonce),
-%    IdHash = keyserver_crypto:hash(Id),
-%    Message = <<"publish_request", EncNonce/binary, IdHash/binary, Topic/binary>>,
-%    encrypt_message(Message, EncNonce, Key, IV).
-
-%decrypt_secure_publish_request(Nonce, Message, Key, IV) -> 
-%    case decrypt_message(Message, Nonce, Key, IV) of
-%        <<"publish_request", EncNonce:?NONCE_BYTES/binary, IdHash:?HASH_BYTES/binary, Topic/binary>> ->
-%            case Nonce =:= decode_nonce(EncNonce) of
-%                false ->
-%                    {error, nonce};
-%                true ->
-%                    {publish_request, IdHash, Topic, Nonce}
-%            end;
-%        Bin when is_binary(Bin) -> {error, plain_msg};
-%        {error, _}=Error -> Error
-%    end.
-
-%encrypt_secure_publish_response(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
-%    EncNonce = encode_nonce(Nonce),
-%    
-%    Message = <<"publish_response", EncNonce/binary, 
-%                SessionKeyId/binary, SessionKey/binary,
-%                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
-%
-%    encrypt_message(Message, EncNonce, Key, IV).
-
 %% TODO: same as above.
 encrypt_session_key(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
@@ -270,21 +242,6 @@ decrypt_session_key(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
 
-%decrypt_secure_publish_response(Nonce, Message, Key, IV) ->
-%     case decrypt_message(Message, Nonce, Key, IV) of
-%        <<"publish_response", EncNonce:?NONCE_BYTES/binary, 
-%          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
-%          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
-%            case Nonce =:= decode_nonce(EncNonce) of
-%                false ->
-%                    {error, nonce};
-%                true ->
-%                    {publish_response, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
-%            end;
-%        Bin when is_binary(Bin) -> {error, plain_msg};
-%        {error, _}=Error -> Error
-%    end.
-
 
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
@@ -297,29 +254,6 @@ decrypt_secure_publish(<<"sec-pub", IV:?IV_BYTES/binary, $:, Tag:?AES_GCM_TAG_SI
         {error, _}=Error -> Error
     end.
     
-%%
-%% Secure Subscribe
-%%
-
-encrypt_secure_subscribe_request(Id, KeyId, Topic, Nonce, Key, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    IdHash = keyserver_crypto:hash(Id),
-    Message = <<"subscribe_request", EncNonce/binary, IdHash/binary, KeyId/binary, Topic/binary>>,
-    encrypt_message(Message, EncNonce, Key, IV).
-
-decrypt_secure_subscribe_request(Nonce, Message, Key, IV) ->
-     case decrypt_message(Message, Nonce, Key, IV) of
-        <<"subscribe_request", EncNonce:?NONCE_BYTES/binary, 
-          IdHash:?HASH_BYTES/binary,
-          KeyId:?KEY_ID_BYTES/binary,
-          Topic/binary>> ->
-             case Nonce =:= decode_nonce(EncNonce) of
-                 false -> {error, nonce};
-                 true -> {subscribe_request, IdHash, KeyId, Topic, Nonce}
-             end;
-         Bin when is_binary(Bin) -> {error, plain_msg};
-         {error, _}=Error -> Error
-     end.
 
 encrypt_request(Id, Nonce, Request, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
@@ -435,6 +369,4 @@ decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV
     end;
 decrypt_message(_Msg, _Nonce, _Key, _IV) ->
     {error, cipher_msg}.
-
-
 
