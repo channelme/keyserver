@@ -26,6 +26,7 @@
 -export([
     start_link/4,
     public_enc_key/1,
+
     connect_to_server/3,  
 
     request/4      
@@ -117,8 +118,12 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{private_key=Priva
                     %% Store the communication key for later use.
                     true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, nonce=Nonce1, server_nonce=ServerNonce}),
 
-                    CipherMsg = keyserver_crypto:encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce1}, EEncKey, IV),
-                    {reply, {ok, Nonce1, IV, CipherMsg}, State};
+                    %CipherMsg = keyserver_crypto:encrypt_hello_answer({hello_answer, KeyES, ServerNonce, Nonce1}, EEncKey, IV),
+                    
+                    Response = {hello_answer, KeyES, Nonce1},
+                    EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, KeyES, IVS),
+
+                    {reply, {ok, EncryptedResponse, IVS}, State};
                 _ ->
                     {reply, {error, invalid_request}, State}
             end;
