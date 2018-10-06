@@ -139,15 +139,12 @@ handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_k
                 {error, _}=E ->
                     {reply, E, State};
                 {ok, RequestNonce, Request} ->
-                    io:fwrite(standard_error, "TODO: Replay detection: ~p: ~p~n", [RequestNonce, StoredNonce]),
+                    %% TODO add replay detection
                     {Response, State1} = handle_request(Request, Entry, State),
 
-                    io:fwrite(standard_error, "Request: ~p, ~p~n", [Request, Response]),
-                    
                     IVS = keyserver_crypto:generate_iv(),
                     ServerNonce1 = inc_server_nonce(Id, Table),
 
-                    io:fwrite(standard_error, "ServerNonce: ~p~n", [ServerNonce1]),
                     EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce1, Response, KeyES, IVS),
 
                     {reply, {ok, EncryptedResponse, IVS}, State1}
