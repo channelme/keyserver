@@ -27,7 +27,6 @@
     connect_to_server/5,
 
     p2p_request/5,
-
     secure_publish/5,
     secure_subscribe/6
 ]).
@@ -49,48 +48,38 @@ connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) anda
     Message = keyserver_crypto:encrypt_hello(EncKey, Nonce, ServerEncKey),
      
     %% Server handles the request.
-    case keyserver_server:connect_to_server(Name, Id, Message) of
-        {ok, SNonce1, IVS, Result} ->
-            %% TODO: replay check
-            keyserver_crypto:decrypt_hello_answer(SNonce1, Result, EncKey, IVS);
-        {error, _} = Error -> Error
-    end;
+    handle_response(keyserver_server:connect_to_server(Name, Id, Message), Name, EncKey);
 
 connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) ->
     connect_to_server(Name, z_convert:to_binary(Id), EncKey, Nonce, ServerEncKey).
     
-
-%% Request a communication key for another party.
 p2p_request(Name, Id, OtherId, Nonce, Key) when is_binary(Id) andalso is_binary(OtherId) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
-    Message = keyserver_crypto:encrypt_p2p_request(Id, OtherId, Nonce, Key, IV),
-    keyserver_server:p2p_request(Name, Id, Nonce, Message, IV);
-p2p_request(Name, Id, OtherId, Nonce, Key) ->
-    p2p_request(Name, z_convert:to_binary(Id), z_convert:to_binary(OtherId), Nonce, Key).
-
-%% Request a communication key for another party.
-secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
+    EncryptedRequest = keyserver_crypto:encrypt_request(Id, Nonce, {direct, OtherId}, Key, IV),
+    handle_request(Name, Id, EncryptedRequest, Key, IV).
+ 
+secure_publish(Name, Id, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) ->
     IV = keyserver_crypto:generate_iv(),
-    Message = keyserver_crypto:encrypt_secure_publish_request(Id, Topic, Nonce, Key, IV),
-
-    case keyserver_server:publish_request(Name, Id, Nonce, Message, IV) of
-        {ok, SNonce1, IVS, Result} ->
-            %% TODO: replay check
-            keyserver_crypto:decrypt_secure_publish_response(SNonce1, Result, Key, IVS);
-        {error, _} = Error -> Error
-    end;
-secure_publish(Name, Id, Topic, Nonce, Key) ->
-    secure_publish(Name, z_convert:to_binary(Id), z_convert:to_binary(Topic), Nonce, Key).
-
+    EncryptedRequest = keyserver_crypto:encrypt_request(Id, Nonce, {publish, Topic}, Key, IV),
+    handle_request(Name, Id, EncryptedRequest, Key, IV).
+    
 secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) when is_binary(Id) andalso is_binary(Topic) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
-    Message = keyserver_crypto:encrypt_secure_subscribe_request(Id, KeyId, Topic, Nonce, Key, IV),
+    EncryptedRequest = keyserver_crypto:encrypt_request(Id, Nonce, {subscribe, KeyId, Topic}, Key, IV),
+    handle_request(Name, Id, EncryptedRequest, Key, IV).
 
-    case keyserver_server:subscribe_request(Name, Id, Nonce, Message, IV) of
-        {ok, SNonce1, IVS, Result} ->
-            %% TODO: replay check...    
-            keyserver_crypto:decrypt_session_key(SNonce1, Result, Key, IVS);
-        {error, _} = Error -> Error
-    end;
-secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) ->
-    secure_subscribe(Name, z_convert:to_binary(Id), KeyId, z_convert:to_binary(Topic), Nonce, Key).
+%%
+%% Helpers
+%%
+
+handle_request(Name, Id, EncryptedRequest, Key, IV) ->
+    handle_response(
+      keyserver_server:request(Name, Id, EncryptedRequest, IV), 
+      Name, Key).
+
+handle_response({ok, Result, IVS}, Name, Key) ->
+    %% TODO: replay check
+    keyserver_crypto:decrypt_response(z_convert:to_binary(Name), Result, Key, IVS);
+handle_response({error, _}=Error, _Name, _Key) ->
+    Error.
+    
