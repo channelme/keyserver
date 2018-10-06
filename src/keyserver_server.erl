@@ -242,8 +242,6 @@ handle_request({subscribe, SessionKeyId, Topic},
                       callback_module=Module, user_context=Context}=State) ->
     case check_allowed(subscribe, [{id, Id}, {topic, Topic}, {key_id, SessionKeyId}], Module, Context) of
         ok ->
-            io:fwrite("secure subscribe request~n", []),
-
             case ets:lookup(SessionKeyTable, SessionKeyId) of
                 [] ->
                     {{error, nokey}, State};
