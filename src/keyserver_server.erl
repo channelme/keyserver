@@ -134,11 +134,11 @@ handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_k
     case ets:lookup(Table, Id) of
         [] -> 
             {reply, {error, not_found}, State};
-        [#register_entry{owner_id=Id, key=KeyES, nonce=StoredNonce}=Entry] ->
+        [#register_entry{owner_id=Id, key=KeyES}=Entry] ->
             case keyserver_crypto:decrypt_request(Id, Message, KeyES, IV) of
                 {error, _}=E ->
                     {reply, E, State};
-                {ok, RequestNonce, Request} ->
+                {ok, _RequestNonce, Request} ->
                     %% TODO add replay detection
                     {Response, State1} = handle_request(Request, Entry, State),
 

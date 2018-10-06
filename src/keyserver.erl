@@ -27,9 +27,7 @@
     connect_to_server/5,
 
     p2p_request/5,
-
     secure_publish/5,
-
     secure_subscribe/6
 ]).
 
@@ -75,7 +73,9 @@ secure_subscribe(Name, Id, KeyId, Topic, Nonce, Key) when is_binary(Id) andalso 
 %%
 
 handle_request(Name, Id, EncryptedRequest, Key, IV) ->
-    handle_response(keyserver_server:request(Name, Id, EncryptedRequest, IV), Name, Key).
+    handle_response(
+      keyserver_server:request(Name, Id, EncryptedRequest, IV), 
+      Name, Key).
 
 handle_response({ok, Result, IVS}, Name, Key) ->
     %% TODO: replay check
