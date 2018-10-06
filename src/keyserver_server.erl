@@ -129,7 +129,6 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name, privat
         _ ->
             {reply, {error, already_connected}, State}
     end;
-
 handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_key_table=Table}=State) ->
     case ets:lookup(Table, Id) of
         [] -> 
@@ -180,6 +179,7 @@ terminate(_Reason, _State) ->
 %% Helpers
 %%
 
+-spec handle_request(keyserver_crypto:request() | {error, term()}, #register_entry{}, #state{}) -> {term(), #state{}}.
 handle_request({direct, OtherId},
                #register_entry{owner_id=Id, key=KeyES},
                #state{communication_key_table=Table, 
@@ -257,9 +257,7 @@ handle_request({subscribe, SessionKeyId, Topic},
             end;
         {error, _Reason} ->
             {not_allowed, State}
-    end;
-handle_request(_Id, {error, _Reason}, #state{}=State) ->
-    {ok, State}.
+    end.
     
 
 -spec inc_server_nonce(binary(), ets:tab()) -> integer().
