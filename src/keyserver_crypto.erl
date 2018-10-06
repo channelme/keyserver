@@ -63,11 +63,17 @@
 -type key() :: <<_:(?KEY_BYTES*8)>>.
 -type iv() :: <<_:(?IV_BYTES*8)>>.
 -type pub_enc_key() :: crypto:rsa_public().
+-type priv_dec_key() :: crypto:rsa_private().
 -type hash() :: <<_:(?HASH_BYTES*8)>>.
 -type encoded_nonce() :: <<_:(?NONCE_BYTES*8)>>.
 
 -type timestamp() :: <<_:(?HASH_BYTES*8)>>.
 -type p2p_ticket() :: binary().
+
+-type id() :: binary().
+-type topic() :: binary().
+
+-type request() :: {direct, id()} | {publish, topic()} | {subscribe, key_id(), topic()}.
 
 -export_type([
     key/0,
@@ -127,6 +133,7 @@ encrypt_hello(EncKey, Nonce, ServerEncKey) ->
     crypto:public_encrypt(rsa, 
         <<"hello", EncKey/binary, EncNonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
 
+-spec decrypt_hello(binary(), priv_dec_key()) -> {hello, key(), nonce} | {error, message}.
 decrypt_hello(Message, PrivateKey) ->
     case crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding) of
         <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> ->
@@ -187,6 +194,7 @@ encrypt_request(Id, Nonce, Request, Key, IV) ->
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
     <<Tag/binary, $:, Msg/binary>>.
 
+-spec encode_request(request()) -> binary().
 encode_request({direct, OtherId}) ->
     <<?DIRECT, OtherId/binary>>;
 encode_request({publish, Topic}) ->
@@ -194,6 +202,7 @@ encode_request({publish, Topic}) ->
 encode_request({subscribe, KeyId, Topic}) ->
     <<?SUBSCRIBE, KeyId/binary, Topic/binary>>.
 
+-spec decode_request(binary()) -> request() | {error, unknown_request}.
 decode_request(<<?DIRECT, OtherId/binary>>) ->
     {direct, OtherId};
 decode_request(<<?PUBLISH, Topic/binary>>) ->
@@ -203,10 +212,8 @@ decode_request(<<?SUBSCRIBE, KeyId:?KEY_ID_BYTES/binary, Topic/binary>>) ->
 decode_request(_) ->
     {error, unknown_request}.
 
--spec decrypt_request(binary(), binary(), key(), iv()) -> 
-                             {direct, binary()} | 
-                             {publish, binary()} | 
-                             {subscribe, key_id(), binary()} | 
+-spec decrypt_request(id(), binary(), key(), iv()) ->  
+                             {ok, nonce(), request()} |
                              {error, unknown_request} | 
                              {error, plaintext} | 
                              {error, ciphertext} | 
