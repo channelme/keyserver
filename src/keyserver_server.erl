@@ -40,6 +40,8 @@
     name,
     public_key,
     private_key,
+          
+    timer,
 
     communication_key_table,
     session_key_table,
@@ -97,7 +99,9 @@ request(Name, Id, Message, IV) ->
 %%
 
 init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
+    {ok, TRef} = timer:send_interval(36000, purge),
     State = #state{name=z_convert:to_binary(Name), 
+                   timer=TRef,
                    public_key=PublicKey, private_key=PrivateKey,
                    callback_module=CallbackModule, user_context=UserContext},
     {ok, State}.
@@ -166,13 +170,19 @@ handle_info({'ETS-TRANSFER', Table, _FromPid, communication_key_table}, State) -
     {noreply, State#state{communication_key_table=Table}};
 handle_info({'ETS-TRANSFER', Table, _FromPid, session_key_table}, State) ->
     {noreply, State#state{session_key_table=Table}};
+handle_info(purge, State) ->
+    Timestamp = keyserver_utils:unix_time(),
+    purge_communication_keys(Timestamp, State#state.communication_key_table),
+    purge_session_keys(Timestamp, State#state.session_key_table),
+    {noreply, State};
 handle_info(_Msg, State) ->
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{timer=TRef}) ->
+    {ok, cancel} = timer:cancel(TRef),
     ok.
 
 %%
@@ -287,6 +297,14 @@ ensure_communication_key_table(Name) ->
 ensure_session_key_table(Name) ->
     ensure_table(session_key_table_name(Name), 2).
 
+purge_communication_keys(Timestamp, Table) ->
+    ets:select_delete(Table, [{#register_entry{expiration_time='$1', _='_'},
+                               [{'=<', '$1', Timestamp}], [true]}]).
+
+purge_session_keys(Timestamp, Table) ->
+    ets:select_delete(Table, [{#session_record{expiration_time='$1', _='_'},
+                               [{'=<', '$1', Timestamp}], [true]}]).
+
 ensure_table(Name, KeyPos) ->
     case ets:info(Name) of
         undefined ->
@@ -300,3 +318,60 @@ communication_key_table_name(Name) ->
 
 session_key_table_name(Name) ->
     z_convert:to_atom(z_convert:to_list(Name) ++ "$session_keys").
+
+%%
+%% Tests
+%%
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+communication_table_purge_test() ->
+    Table = ensure_communication_key_table(eunit),
+    purge_communication_keys(0, Table),
+
+    ets:insert(Table, #register_entry{owner_id=1, expiration_time=10}),
+    ets:insert(Table, #register_entry{owner_id=2, expiration_time=50}),
+    ets:insert(Table, #register_entry{owner_id=3, expiration_time=60}),
+    ets:insert(Table, #register_entry{owner_id=4, expiration_time=70}),
+
+    ?assertEqual(4, length(ets:tab2list(Table))),
+    
+    purge_communication_keys(50, Table),
+    
+    ?assertEqual(2, length(ets:tab2list(Table))),
+    ?assertEqual(true, ets:member(Table, 3)),
+    ?assertEqual(true, ets:member(Table, 4)),
+
+    purge_communication_keys(60, Table),
+    
+    ?assertEqual(1, length(ets:tab2list(Table))),
+    ?assertEqual(true, ets:member(Table, 4)),
+
+    ok.
+
+session_table_purge_test() ->
+    Table = ensure_session_key_table(eunit),
+    purge_communication_keys(0, Table),
+
+    ets:insert(Table, #session_record{key_id=1, expiration_time=10}),
+    ets:insert(Table, #session_record{key_id=2, expiration_time=50}),
+    ets:insert(Table, #session_record{key_id=3, expiration_time=60}),
+    ets:insert(Table, #session_record{key_id=4, expiration_time=70}),
+
+    ?assertEqual(4, length(ets:tab2list(Table))),
+    
+    purge_session_keys(50, Table),
+    
+    ?assertEqual(2, length(ets:tab2list(Table))),
+    ?assertEqual(true, ets:member(Table, 3)),
+    ?assertEqual(true, ets:member(Table, 4)),
+
+    purge_session_keys(60, Table),
+    
+    ?assertEqual(1, length(ets:tab2list(Table))),
+    ?assertEqual(true, ets:member(Table, 4)),
+
+    ok.
+
+-endif.
