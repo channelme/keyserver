@@ -99,7 +99,7 @@ request(Name, Id, Message, IV) ->
 %%
 
 init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
-    {ok, TRef} = timer:send_interval(36000, purge),
+    {ok, TRef} = timer:send_interval(60000, purge),
     State = #state{name=z_convert:to_binary(Name), 
                    timer=TRef,
                    public_key=PublicKey, private_key=PrivateKey,
