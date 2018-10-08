@@ -28,7 +28,11 @@
 -define(TICKETS, $T).
 -define(SESSION_KEY, $K).
 
+-define(PUBLIC_MODULUS, 65537).
+-define(MODULUS_SIZE, 2048).
+
 -export([
+    generate_keypair/0,
     generate_key/0,
     generate_key_id/0,
     generate_iv/0,
@@ -88,6 +92,10 @@
 -spec generate_key() -> key().
 generate_key() ->
     crypto:strong_rand_bytes(?KEY_BYTES).
+
+-spec generate_keypair() -> {pub_enc_key(), priv_dec_key()}.
+generate_keypair() ->
+    crypto:generate_key(rsa, {?MODULUS_SIZE, ?PUBLIC_MODULUS}).
 
 -spec generate_key_id() -> key_id().
 generate_key_id() ->

@@ -22,9 +22,6 @@
 
 -export([start_link/3]).
 
--define(PUBLIC_MODULUS, 65537).
--define(MODULUS_SIZE, 2048).
-
 % supervisor callback.
 -export([init/1]).
 
@@ -32,7 +29,7 @@ start_link(Name, CallbackModule, UserContext) ->
     supervisor:start_link(?MODULE, [Name, CallbackModule, UserContext]).
 
 init([Name, CallbackModule, UserContext]) ->
-    KeyPair = crypto:generate_key(rsa, {?MODULUS_SIZE, ?PUBLIC_MODULUS}),
+    KeyPair = keyserver_crypto:generate_keypair(),
     
     {ok, {{one_for_all, 1, 3600},
           [{keyserver_server,

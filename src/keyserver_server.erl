@@ -26,10 +26,9 @@
 -export([
     start_link/4,
     public_enc_key/1,
-
     connect_to_server/3,  
-
-    request/4      
+    request/4,      
+    stop/1
 ]).
 
 % gen_server callbacks
@@ -85,6 +84,9 @@ start_link(Name, {_PublicKey, _PrivateKey}=KeyPair, CallbackModule, UserContext)
         Else ->
             Else
     end.
+
+stop(Name) ->
+    gen_server:call(Name, stop).
      
 public_enc_key(Name) ->
     gen_server:call(Name, public_enc_key).
