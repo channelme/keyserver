@@ -37,34 +37,36 @@
          code_change/3, terminate/2]).
 
 -record(state, {
-    name,
-    public_key,
-    private_key,
+    name :: binary(),
+    public_key :: keyserver_crypto:pub_enc_key(),
+    private_key :: keyserver_crypto:priv_dec_key(),
           
-    timer,
+    timer :: timer:tref(),
 
-    communication_key_table,
-    session_key_table,
+    communication_key_table :: ets:tab(),
+    session_key_table :: ets:tab(),
 
-    callback_module,
-    user_context
+    callback_module :: module(),
+    user_context :: term()
 }).
 
+-type match(A) :: A | '_' | '$1' | '$2'. % type for use in match expression
+
 -record(register_entry, {
-    owner_id,
-    key,
-    nonce,
-    server_nonce,
-    expiration_time,
-    lifetime  
+    owner_id :: match(binary()),
+    key :: match(keyserver_crypto:key()),
+    nonce :: match(keyserver_crypto:nonce()),
+    server_nonce :: match(keyserver_crypto:nonce()),
+    expiration_time :: match(keyserver_utils:timestamp()),
+    lifetime :: match(pos_integer()) 
 }).
 
 -record(session_record, {
-    key_id,
-    key,
-    owner_id,
-    expiration_time,
-    lifetime
+    key_id :: match(keyserver_crypto:key_id()),
+    key :: match(keyserver_crypto:key()),
+    owner_id :: match(binary()),
+    expiration_time :: match(keyserver_utils:timestamp()),
+    lifetime :: match(pos_integer())
 }).
 
 %%
@@ -118,10 +120,15 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name, privat
 
                     KeyES = keyserver_crypto:generate_key(),
                     IVS = keyserver_crypto:generate_iv(),
+                    
+                    Timestamp = keyserver_utils:unix_time(),
+                    Lifetime = 3600,
 
                     %% Store the communication key for later use.
                     true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, 
-                                                                 nonce=Nonce1, server_nonce=ServerNonce}),
+                                                                 nonce=Nonce1, server_nonce=ServerNonce,
+                                                                 expiration_time = Timestamp + Lifetime,
+                                                                 lifetime = Lifetime}),
 
                     Response = {hello_answer, KeyES, Nonce1},
                     EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, EEncKey, IVS),
@@ -287,7 +294,7 @@ check_allowed(What, Args, Module, Context) when is_atom(What) andalso is_list(Ar
         Response -> {error, {unexpected_response, Response, Module, Context}}
     end.
 
--spec create_p2p_ticket(keyserver_crypto:key(), keyserver_util:timestamp(), non_neg_integer(), binary(), keyserver_crypto:key()) -> keyserver_crypto:p2p_ticket().
+-spec create_p2p_ticket(keyserver_crypto:key(), keyserver_utils:timestamp(), non_neg_integer(), binary(), keyserver_crypto:key()) -> keyserver_crypto:p2p_ticket().
 create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     keyserver_crypto:create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey).
     
@@ -297,10 +304,12 @@ ensure_communication_key_table(Name) ->
 ensure_session_key_table(Name) ->
     ensure_table(session_key_table_name(Name), 2).
 
+-spec purge_communication_keys(keyserver_utils:timestamp(), ets:tab()) -> any().
 purge_communication_keys(Timestamp, Table) ->
     ets:select_delete(Table, [{#register_entry{expiration_time='$1', _='_'},
                                [{'=<', '$1', Timestamp}], [true]}]).
 
+-spec purge_session_keys(keyserver_utils:timestamp(), ets:tab()) -> any().
 purge_session_keys(Timestamp, Table) ->
     ets:select_delete(Table, [{#session_record{expiration_time='$1', _='_'},
                                [{'=<', '$1', Timestamp}], [true]}]).
