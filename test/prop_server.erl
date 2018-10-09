@@ -8,6 +8,7 @@
 -export([is_allowed/3]).
 
 %% Callback functions
+is_allowed(connect, _Args, _Context) -> true;
 is_allowed(publish, _Args, _Context) -> true;
 is_allowed(subscribe, _Args, _Context) -> true;
 is_allowed(communicate, _Args, _Context) -> true;

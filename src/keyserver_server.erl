@@ -112,30 +112,37 @@ init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
 
 handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=undefined}=State) ->
     {reply, {error, not_ready}, State};
-handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name, private_key=PrivateKey, communication_key_table=Table}=State) ->
+handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name,
+                                                               private_key=PrivateKey, communication_key_table=Table,
+                                                               callback_module=M, user_context=C}=State) ->
     case ets:lookup(Table, Id) of
         [] ->
             case keyserver_crypto:decrypt_hello(CipherText, PrivateKey) of
                 {hello, EEncKey, Nonce} ->
-                    ServerNonce = keyserver_crypto:generate_nonce(),
-                    Nonce1 = keyserver_crypto:inc_nonce(Nonce),
+                    case check_allowed(connect, [{id, Id}], M, C) of 
+                        ok ->
+                            ServerNonce = keyserver_crypto:generate_nonce(),
+                            Nonce1 = keyserver_crypto:inc_nonce(Nonce),
 
-                    KeyES = keyserver_crypto:generate_key(),
-                    IVS = keyserver_crypto:generate_iv(),
+                            KeyES = keyserver_crypto:generate_key(),
+                            IVS = keyserver_crypto:generate_iv(),
                     
-                    Timestamp = keyserver_utils:unix_time(),
-                    Lifetime = 3600,
+                            Timestamp = keyserver_utils:unix_time(),
+                            Lifetime = 3600,
 
-                    %% Store the communication key for later use.
-                    true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, 
-                                                                 nonce=Nonce1, server_nonce=ServerNonce,
-                                                                 expiration_time = Timestamp + Lifetime,
-                                                                 lifetime = Lifetime}),
+                            %% Store the communication key for later use.
+                            true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, 
+                                                                         nonce=Nonce1, server_nonce=ServerNonce,
+                                                                         expiration_time = Timestamp + Lifetime,
+                                                                         lifetime = Lifetime}),
 
-                    Response = {hello_answer, KeyES, Nonce1},
-                    EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, EEncKey, IVS),
+                            Response = {hello_answer, KeyES, Nonce1},
+                            EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, EEncKey, IVS),
 
-                    {reply, {ok, EncryptedResponse, IVS}, State};
+                            {reply, {ok, EncryptedResponse, IVS}, State};
+                        {error, _} ->
+                            {reply, {error, not_allowed}, State}
+                    end;
                 _ ->
                     {reply, {error, invalid_request}, State}
             end;
