@@ -139,7 +139,7 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name, privat
                 _ ->
                     {reply, {error, invalid_request}, State}
             end;
-        _ ->
+        _E ->
             {reply, {error, already_connected}, State}
     end;
 handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_key_table=Table}=State) ->
@@ -190,6 +190,10 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+terminate(normal, #state{timer=TRef}=State) ->
+    ets:delete(State#state.communication_key_table),
+    ets:delete(State#state.session_key_table),
+    {ok, cancel} = timer:cancel(TRef);
 terminate(_Reason, #state{timer=TRef}) ->
     {ok, cancel} = timer:cancel(TRef),
     ok.

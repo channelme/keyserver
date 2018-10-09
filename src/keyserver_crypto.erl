@@ -182,7 +182,6 @@ decrypt_session_key(Nonce, Message, Key, IV) ->
         {error, _}=Error -> Error
     end.
 
-
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {KeyId, Message, ?AES_GCM_TAG_SIZE}),

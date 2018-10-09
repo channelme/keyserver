@@ -18,11 +18,12 @@ prop_start_stop() ->
     {PubKey, _} = KeyPair = keyserver_crypto:generate_keypair(),
     ?FORALL({Name, Ids}, {atom(), list(binary())},
 	    begin
-		io:fwrite(standard_error, "list: ~p~n", [Ids]),
 		keyserver_server:start_link(Name, KeyPair, ?MODULE, []),
 		{ok, PubKey} = keyserver_server:public_enc_key(Name),
 
-		register_all(Ids, Name, PubKey),
+		Registered = register_all(Ids, Name, PubKey, #{}),
+                
+                true = valid_responses(Name, Ids, Registered),
 
 		ok =:= keyserver_server:stop(Name)
 	    end).
@@ -31,13 +32,50 @@ prop_start_stop() ->
 %% Helpers
 %%
 
-register_all([], _Name, _Key) -> done;
-register_all([Id|Rest], Name, Key) ->
-    ClientKey = keyserver_crypto:generate_key(),
-    ClientNonce = keyserver_crypto:generate_nonce(),
-    Message = keyserver_crypto:encrypt_hello(ClientKey, ClientNonce, Key),
+valid_responses(_Name, [], _Registered) ->
+    true;
+valid_responses(Name, [Id|Rest], Registered) ->
+    case maps:find(Id, Registered) of
+        {ok, R} -> 
+            case valid_response(Name, R) of
+                true -> valid_responses(Name, Rest, Registered);
+                _ -> false
+            end;
+        error -> false
+    end.
 
-    {ok, ER, IV} = keyserver_server:connect_to_server(Name, Id, Message),
-    io:fwrite(standard_error, "R: ~p: ~p ~n", [ER, IV]),
+valid_response(Name, #{key := Key, nonce := Nonce, encrypted_response := ER, iv := IV }) ->
+    {ok, _ServerNonce, {hello_response, _KeyES, Nonce1}} =
+        keyserver_crypto:decrypt_response(z_convert:to_binary(Name), ER, Key, IV),
+    Nonce1 = keyserver_crypto:inc_nonce(Nonce),
+    true;
+valid_response(_Name, _E) ->
+    io:fwrite(standard_error, "R: ~p~n", [_E]),
+    false.
+     
 
-    register_all(Rest, Name, Key).
+register_all([], _Name, _Key, Registered) -> Registered;
+register_all([Id|Rest], Name, Key, Registered) ->
+    case maps:find(Id, Registered) of 	   
+        error ->
+            %% This id is not yet registered. Registering should work 
+	    ClientKey = keyserver_crypto:generate_key(),
+	    ClientNonce = keyserver_crypto:generate_nonce(),
+	    Message = keyserver_crypto:encrypt_hello(ClientKey, ClientNonce, Key),
+
+            {ok, ER, IV} = keyserver_server:connect_to_server(Name, Id, Message),
+
+            register_all(Rest, Name, Key, Registered#{Id => #{key => ClientKey, 
+                                                              nonce => ClientNonce,
+                                                              encrypted_response => ER,
+                                                              iv => IV}});
+        {ok, _} ->
+            %% This client is already connected... make sure
+            ClientKey = keyserver_crypto:generate_key(),
+	    ClientNonce = keyserver_crypto:generate_nonce(),
+	    Message = keyserver_crypto:encrypt_hello(ClientKey, ClientNonce, Key),
+
+            {error, already_connected} = keyserver_server:connect_to_server(Name, Id, Message),
+
+            register_all(Rest, Name, Key, Registered)
+    end.
