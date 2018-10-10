@@ -20,7 +20,8 @@ keyserver and the name of the keyserver. All connection request to the
 keyserver are encrypted with this key. The keyserver can decrypt the
 connection request and register the entity.
 
-The CallbackModule will be called  
+The CallbackModule will be called to check if entities are allowed to
+connect, publish, subscribe, or communicate directly.
 
 ```erlang
 {ok, PubEncKey} = keyserver:public_enc_key(my_first_keyserver).
@@ -38,7 +39,9 @@ Key = keyserver_crypto:generate_key(),
 Nonce = keyserver_crypto:generate_nonce(),
 
 {ok, _ServerNonce, {hello_response, KeyES, Nonce1}} =
-    keyserver:connect_to_server(my_first_keyserver, "me", Key, Nonce, ServerEncKey),
+    keyserver:connect_to_server(my_first_keyserver, "me", Key, Nonce, ServerEncKey).
 ```
+
+
 
 ...
