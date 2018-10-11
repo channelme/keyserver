@@ -198,7 +198,7 @@ encrypt_request(Id, Nonce, Request, Key, IV) ->
     Message = encode_request(Request),
     M = <<?V1, EncNonce/binary, Message/binary>>,   
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
-    <<Tag/binary, $:, Msg/binary>>.
+    <<Msg/binary, Tag/binary>>.
 
 encode_request({direct, OtherId}) ->
     <<?DIRECT, OtherId/binary>>;
@@ -222,8 +222,9 @@ decode_request(_) ->
                              {error, ciphertext} | 
                              {error, cipher_integrity}.
 decrypt_request(Id, Message, Key, IV) ->
+    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
     case Message of
-        <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
+        <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> ->
             case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
                 <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
                     {ok, decode_nonce(EncNonce), decode_request(Protocol)};
@@ -241,13 +242,14 @@ encrypt_response(Id, Nonce, Response, Key, IV) ->
     Message = encode_response(Response),
     M = <<?V1, EncNonce/binary, Message/binary>>,   
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
-    <<Tag/binary, $:, Msg/binary>>.
+    <<Msg/binary, Tag/binary>>.
 
 
 decrypt_response(Id, Message, Key, IV) ->
     %% TODO: merge with decrypt request.
+    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
     case Message of
-        <<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>> ->
+        <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> ->
             case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
                 <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
                     {ok, decode_nonce(EncNonce), decode_response(Protocol)};
