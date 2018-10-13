@@ -24,7 +24,8 @@
     stop/1,
 
     public_enc_key/1,
-    connect_to_server/5,
+
+    connect/5,
 
     p2p_request/5,
     secure_publish/5,
@@ -42,16 +43,13 @@ stop(Name) when is_atom(Name) ->
 %% Get the public encryption key of the keyserver.
 public_enc_key(Name) when is_atom(Name) ->
     keyserver_server:public_enc_key(Name).
-    
--spec connect_to_server(atom(), term(), keyserver_crypto:key(), keyserver_crypto:nonce(), keyserver_crypto:pub_enc_key()) -> _.
-connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) andalso size(EncKey) =:= ?KEY_BYTES ->
-    Message = keyserver_crypto:encrypt_hello(EncKey, Nonce, ServerEncKey),
+
+connect(Name, Id, EncKey, Nonce, ServerEncKey) when is_binary(Id) andalso size(EncKey) =:= ?KEY_BYTES ->
+    Message = keyserver_crypto:encrypt_hello(Id, EncKey, Nonce, ServerEncKey),
      
     %% Server handles the request.
-    handle_response(keyserver_server:connect_to_server(Name, Id, Message), Name, EncKey);
+    handle_response(keyserver_server:connect(Name, Message), Name, EncKey).
 
-connect_to_server(Name, Id, EncKey, Nonce, ServerEncKey) ->
-    connect_to_server(Name, z_convert:to_binary(Id), EncKey, Nonce, ServerEncKey).
     
 p2p_request(Name, Id, OtherId, Nonce, Key) when is_binary(Id) andalso is_binary(OtherId) andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),

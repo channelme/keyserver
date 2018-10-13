@@ -26,7 +26,7 @@
 -export([
     start_link/4,
     public_enc_key/1,
-    connect_to_server/3,  
+    connect/2,  
     request/4,      
     stop/1
 ]).
@@ -52,7 +52,7 @@
 -type match(A) :: A | '_' | '$1' | '$2'. % type for use in match expression
 
 -record(register_entry, {
-    owner_id :: match(binary()),
+    owner_id :: match(keyserver_crypto:entity_id()),
     key :: match(keyserver_crypto:key()),
     nonce :: match(keyserver_crypto:nonce()),
     server_nonce :: match(keyserver_crypto:nonce()),
@@ -63,7 +63,7 @@
 -record(session_record, {
     key_id :: match(keyserver_crypto:key_id()),
     key :: match(keyserver_crypto:key()),
-    owner_id :: match(binary()),
+    owner_id :: match(keyserver_crypto:entity_id()),
     expiration_time :: match(keyserver_utils:timestamp()),
     lifetime :: match(pos_integer())
 }).
@@ -91,9 +91,8 @@ stop(Name) ->
 public_enc_key(Name) ->
     gen_server:call(Name, public_enc_key).
 
-connect_to_server(Name, Id, Message) ->
-    gen_server:call(Name, {connect_to_server, Id, Message}).
-    
+connect(Name, Message) ->
+    gen_server:call(Name, {connect, Message}).
 
 request(Name, Id, Message, IV) ->
     gen_server:call(Name, {request, Id, Message, IV}).
@@ -110,16 +109,16 @@ init([Name, {PublicKey, PrivateKey}, CallbackModule, UserContext]) ->
                    callback_module=CallbackModule, user_context=UserContext},
     {ok, State}.
 
-handle_call({connect_to_server, _, _}, _From, #state{communication_key_table=undefined}=State) ->
+handle_call({connect, _}, _From, #state{communication_key_table=undefined}=State) ->
     {reply, {error, not_ready}, State};
-handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name,
-                                                               private_key=PrivateKey, communication_key_table=Table,
-                                                               callback_module=M, user_context=C}=State) ->
-    case ets:lookup(Table, Id) of
-        [] ->
-            case keyserver_crypto:decrypt_hello(CipherText, PrivateKey) of
-                {hello, EEncKey, Nonce} ->
-                    case check_allowed(connect, [{id, Id}], M, C) of 
+handle_call({connect, CipherText}, _From, #state{name=Name,
+                                                 private_key=PrivateKey, communication_key_table=Table,
+                                                 callback_module=M, user_context=C}=State) ->
+    case keyserver_crypto:decrypt_hello(CipherText, PrivateKey) of
+        {hello, EntityId, EEncKey, Nonce} ->
+            case ets:lookup(Table, EntityId) of
+                [] ->
+                    case check_allowed(connect, [{id, EntityId}], M, C) of 
                         ok ->
                             ServerNonce = keyserver_crypto:generate_nonce(),
                             Nonce1 = keyserver_crypto:inc_nonce(Nonce),
@@ -131,24 +130,25 @@ handle_call({connect_to_server, Id, CipherText}, _From, #state{name=Name,
                             Lifetime = 3600,
 
                             %% Store the communication key for later use.
-                            true = ets:insert_new(Table, #register_entry{owner_id=Id, key=KeyES, 
+                            true = ets:insert_new(Table, #register_entry{owner_id=EntityId, key=KeyES, 
                                                                          nonce=Nonce1, server_nonce=ServerNonce,
                                                                          expiration_time = Timestamp + Lifetime,
                                                                          lifetime = Lifetime}),
 
                             Response = {hello_answer, KeyES, Nonce1},
                             EncryptedResponse = keyserver_crypto:encrypt_response(Name, ServerNonce, Response, EEncKey, IVS),
-
                             {reply, {ok, EncryptedResponse, IVS}, State};
-                        {error, _} ->
+                        _ ->
+                            %% TODO: should this be an encrypted message?
                             {reply, {error, not_allowed}, State}
                     end;
                 _ ->
-                    {reply, {error, invalid_request}, State}
+                    {reply, {error, already_connected}, State}
             end;
-        _E ->
-            {reply, {error, already_connected}, State}
+        _ ->
+            {reply, {error, invalid_request}, State}
     end;
+
 handle_call({request, Id, Message, IV}, _From, #state{name=Name, communication_key_table=Table}=State) ->
     case ets:lookup(Table, Id) of
         [] -> 

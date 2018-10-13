@@ -54,7 +54,7 @@ connect() ->
     Key = keyserver_crypto:generate_key(),
     Nonce = keyserver_crypto:generate_nonce(),
 
-    {ok, _ServerNonce, {hello_response, _KeyES, Nonce1}} = keyserver:connect_to_server(test, "me", Key, Nonce, ServerEncKey),
+    {ok, _ServerNonce, {hello_response, _KeyES, Nonce1}} = keyserver:connect(test, <<"me">>, Key, Nonce, ServerEncKey),
     %% Check the response
     %%
     %% Nonce1 should be > Nonce (in this case +1)
@@ -73,10 +73,10 @@ point_to_point() ->
     BobNonce = keyserver_crypto:generate_nonce(),
 
     {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
-        keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
+        keyserver:connect(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
     {ok, _, {hello_response, KeyBobServer, _}} =
-        keyserver:connect_to_server(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
+        keyserver:connect(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
 
     R = keyserver:p2p_request(test, <<"alice">>, <<"bob">>, AliceNonce1, KeyAliceServer),
     ?assertMatch({ok, _, {tickets, _, _}}, R),
@@ -92,7 +92,7 @@ secure_subscribe() ->
     AliceNonce = keyserver_crypto:generate_nonce(),
 
     {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
-        keyserver:connect_to_server(test, "alice", AliceKey, AliceNonce, ServerEncKey),
+        keyserver:connect(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
     %% Register a key
     R = keyserver:secure_publish(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
@@ -118,7 +118,7 @@ secure_publish() ->
     AliceNonce = keyserver_crypto:generate_nonce(),
 
     {ok, _ServerNonce, {hello_response, KeyAliceServer, AliceNonce1}} =
-        keyserver:connect_to_server(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
+        keyserver:connect(test, <<"alice">>, AliceKey, AliceNonce, ServerEncKey),
 
     R = keyserver:secure_publish(test, <<"alice">>, <<"test/test/test">>, AliceNonce1, KeyAliceServer),
 

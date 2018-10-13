@@ -21,10 +21,14 @@
 -define(AES_GCM_TAG_SIZE, 16). % The security of GCM depends on the tag size , so we use the full 128 bits.
 
 -define(V1, $1).
+
+-define(HELLO, $H).
 -define(HELLO_ANSWER, $A).
+
 -define(PUBLISH, $P).
 -define(SUBSCRIBE, $S).
 -define(DIRECT, $D).
+
 -define(TICKETS, $T).
 -define(SESSION_KEY, $K).
 
@@ -42,7 +46,7 @@
 
     inc_nonce/1,
 
-    encrypt_hello/3,
+    encrypt_hello/4,
     decrypt_hello/2,
 
     create_p2p_ticket/5,
@@ -62,6 +66,7 @@
 
 -include("keyserver.hrl").
 
+-type entity_id() :: binary(). %% <<_:(?MAX_ID_BYTES*8)>>.
 -type nonce() :: 0..?MAX_NONCE.
 -type key_id() :: <<_:(?KEY_ID_BYTES*8)>>.
 -type key() :: <<_:(?KEY_BYTES*8)>>.
@@ -74,11 +79,11 @@
 -type timestamp() :: <<_:(?HASH_BYTES*8)>>.
 -type p2p_ticket() :: binary().
 
--type id() :: binary().
 -type topic() :: binary().
--type request() :: {direct, id()} | {publish, topic()} | {subscribe, key_id(), topic()}.
+-type request() :: {direct, entity_id()} | {publish, topic()} | {subscribe, key_id(), topic()}.
 
 -export_type([
+    entity_id/0,
     key/0,
     iv/0,
     nonce/0,
@@ -134,17 +139,17 @@ hash(Data) ->
 %% Hello
 %%
 
--spec encrypt_hello(key(), nonce(), pub_enc_key()) -> binary(). 
-encrypt_hello(EncKey, Nonce, ServerEncKey) ->
+-spec encrypt_hello(entity_id(), key(), nonce(), pub_enc_key()) -> binary(). 
+encrypt_hello(Id, EncKey, Nonce, ServerEncKey) ->
     EncNonce = encode_nonce(Nonce),
     crypto:public_encrypt(rsa, 
-        <<"hello", EncKey/binary, EncNonce/binary>>, ServerEncKey, rsa_pkcs1_oaep_padding).
+        <<?V1, ?HELLO, EncKey/binary, EncNonce/binary, Id/binary>>, 
+                          ServerEncKey, rsa_pkcs1_oaep_padding).
 
--spec decrypt_hello(binary(), priv_dec_key()) -> {hello, key(), nonce()} | {error, message}.
 decrypt_hello(Message, PrivateKey) ->
     case crypto:private_decrypt(rsa, Message, PrivateKey, rsa_pkcs1_oaep_padding) of
-        <<"hello", EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary>> ->
-            {hello, EEncKey, decode_nonce(Nonce)};
+        <<?V1, ?HELLO, EEncKey:?KEY_BYTES/binary, Nonce:?NONCE_BYTES/binary, EntityId/binary>> ->
+            {hello, EntityId, EEncKey, decode_nonce(Nonce)};
         Bin when is_binary(Bin) ->
             {error, message}
     end.

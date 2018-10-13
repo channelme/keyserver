@@ -62,9 +62,9 @@ register_all([Id|Rest], Name, Key, Registered) ->
             %% This id is not yet registered. Registering should work 
 	    ClientKey = keyserver_crypto:generate_key(),
 	    ClientNonce = keyserver_crypto:generate_nonce(),
-	    Message = keyserver_crypto:encrypt_hello(ClientKey, ClientNonce, Key),
+	    Message = keyserver_crypto:encrypt_hello(Id, ClientKey, ClientNonce, Key),
 
-            {ok, ER, IV} = keyserver_server:connect_to_server(Name, Id, Message),
+            {ok, ER, IV} = keyserver_server:connect(Name, Message),
 
             register_all(Rest, Name, Key, Registered#{Id => #{key => ClientKey, 
                                                               nonce => ClientNonce,
@@ -74,9 +74,9 @@ register_all([Id|Rest], Name, Key, Registered) ->
             %% This client is already connected... make sure
             ClientKey = keyserver_crypto:generate_key(),
 	    ClientNonce = keyserver_crypto:generate_nonce(),
-	    Message = keyserver_crypto:encrypt_hello(ClientKey, ClientNonce, Key),
+	    Message = keyserver_crypto:encrypt_hello(Id, ClientKey, ClientNonce, Key),
 
-            {error, already_connected} = keyserver_server:connect_to_server(Name, Id, Message),
+            {error, already_connected} = keyserver_server:connect(Name, Message),
 
             register_all(Rest, Name, Key, Registered)
     end.
