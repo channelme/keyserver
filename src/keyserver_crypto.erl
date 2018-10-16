@@ -32,6 +32,8 @@
 -define(TICKETS, $T).
 -define(SESSION_KEY, $K).
 
+-define(SECURE_PUBLISH, $E).
+
 -define(PUBLIC_MODULUS, 65537).
 -define(MODULUS_SIZE, 2048).
 
@@ -190,9 +192,11 @@ decrypt_session_key(Nonce, Message, Key, IV) ->
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {KeyId, Message, ?AES_GCM_TAG_SIZE}),
-    <<"sec-pub", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
+    <<?V1, ?SECURE_PUBLISH, IV/binary, Msg/binary, Tag/binary>>.
 
-decrypt_secure_publish(<<"sec-pub", IV:?IV_BYTES/binary, $:, Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+decrypt_secure_publish(<<?V1, ?SECURE_PUBLISH, IV:?IV_BYTES/binary, Message/binary>>, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
+    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
+    <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> = Message,
     case crypto:block_decrypt(aes_gcm, Key, IV, {KeyId, Msg, Tag}) of
         Bin when is_binary(Bin) -> {ok, Bin};
         error -> {error, integrity}
