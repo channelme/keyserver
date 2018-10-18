@@ -53,9 +53,6 @@
 
     create_p2p_ticket/5,
 
-    encrypt_session_key/7,
-    decrypt_session_key/4,
-         
     encrypt_request/5,
     decrypt_request/4,
          
@@ -163,31 +160,6 @@ create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {OtherId, Ticket, ?AES_GCM_TAG_SIZE}),
     <<"p2p-ticket", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
 
-
-%% TODO: same as above.
-encrypt_session_key(Nonce, SessionKeyId, SessionKey, Timestamp, Lifetime, Key, IV) ->
-    EncNonce = encode_nonce(Nonce),
-    
-    Message = <<"session-key", EncNonce/binary, 
-                SessionKeyId/binary, SessionKey/binary,
-                Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>>,
-
-    encrypt_message(Message, EncNonce, Key, IV).
-
-decrypt_session_key(Nonce, Message, Key, IV) ->
-     case decrypt_message(Message, Nonce, Key, IV) of
-        <<"session-key", EncNonce:?NONCE_BYTES/binary, 
-          SessionKeyId:?KEY_ID_BYTES/binary, SessionKey:?KEY_BYTES/binary,
-          Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer>> ->
-            case Nonce =:= decode_nonce(EncNonce) of
-                false ->
-                    {error, nonce};
-                true ->
-                    {session_key, SessionKeyId, SessionKey, Timestamp, Lifetime, Nonce}
-            end;
-        Bin when is_binary(Bin) -> {error, plain_msg};
-        {error, _}=Error -> Error
-    end.
 
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
@@ -305,19 +277,3 @@ length_prefix(Bin) when size(Bin) =< 255 ->
 get_length_prefixed_data(<<S:8/unsigned-integer, Rest/binary>>) ->
     <<Data:S/binary, More/binary>> = Rest,
     {Data, More}.
-
-encrypt_message(Message, Nonce, Key, IV) ->
-    %% Use the nonce as associated authentication data.
-    EncNonce = encode_nonce(Nonce),
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {EncNonce, Message, ?AES_GCM_TAG_SIZE}),
-    <<Tag/binary, $:, Msg/binary>>.
-            
-decrypt_message(<<Tag:?AES_GCM_TAG_SIZE/binary, $:, Msg/binary>>, Nonce, Key, IV) when size(Key) =:= ?KEY_BYTES->
-    EncNonce = encode_nonce(Nonce),
-    case crypto:block_decrypt(aes_gcm, Key, IV, {EncNonce, Msg, Tag}) of
-        error -> {error, cipher_integrity};
-        Data when is_binary(Data) -> Data
-    end;
-decrypt_message(_Msg, _Nonce, _Key, _IV) ->
-    {error, cipher_msg}.
-

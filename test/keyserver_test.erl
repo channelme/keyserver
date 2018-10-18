@@ -79,7 +79,7 @@ point_to_point() ->
         keyserver:connect(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
 
     R = keyserver:p2p_request(test, <<"alice">>, <<"bob">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({ok, _, {tickets, _, _}}, R),
+    ?assertMatch({ok, _, {tickets, T1, _T2}}, R),
 
     ok = keyserver:stop(test).
 
