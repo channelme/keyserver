@@ -297,6 +297,8 @@ get_length_prefixed_data(<<S:8/unsigned-integer, Rest/binary>>) ->
     <<Data:S/binary, More/binary>> = Rest,
     {Data, More}.
 
+% Encryption and decryption uses the convention used in javascript
+% subtle crypto to append the tag to the ciphertext.
 aes_gcm_encrypt(Message, Key, IV, AdditionalData) ->
     {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AdditionalData, Message, ?AES_GCM_TAG_SIZE}),
     <<Msg/binary, Tag/binary>>.
