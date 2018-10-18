@@ -227,12 +227,12 @@ handle_request({direct, OtherId},
             
             %% Lookup communication key of B
             %% Create ticket for Other, encrypt under B key
-            TicketA = create_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
+            TicketA = keyserver_crypto:encrypt_p2p_ticket(K_AB, Timestamp, Lifetime, Id, KeyES),
                              
             %% Lookup key of other user.
             %% TODO: handle other id does not exist...
             {ok, KeyOtherS} = lookup_key(Table, OtherId),
-            TicketB = create_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
+            TicketB = keyserver_crypto:encrypt_p2p_ticket(K_AB, Timestamp, Lifetime, OtherId, KeyOtherS), 
 
             Response = {tickets, TicketA, TicketB},
 
@@ -307,10 +307,6 @@ check_allowed(What, Args, Module, Context) when is_atom(What) andalso is_list(Ar
         Response -> {error, {unexpected_response, Response, Module, Context}}
     end.
 
--spec create_p2p_ticket(keyserver_crypto:key(), keyserver_utils:timestamp(), non_neg_integer(), binary(), keyserver_crypto:key()) -> keyserver_crypto:p2p_ticket().
-create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
-    keyserver_crypto:create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey).
-    
 ensure_communication_key_table(Name) ->
     ensure_table(communication_key_table_name(Name), 2).
 

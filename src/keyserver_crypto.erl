@@ -31,6 +31,7 @@
 
 -define(TICKETS, $T).
 -define(SESSION_KEY, $K).
+-define(P2P_TICKET, $I).
 
 -define(SECURE_PUBLISH, $E).
 
@@ -51,7 +52,11 @@
     encrypt_hello/4,
     decrypt_hello/2,
 
-    create_p2p_ticket/5,
+    encrypt_p2p_ticket/5,
+    decrypt_p2p_ticket/3,
+
+    p2p_encrypt/5,
+    p2p_decrypt/6,
 
     encrypt_request/5,
     decrypt_request/4,
@@ -153,23 +158,52 @@ decrypt_hello(Message, PrivateKey) ->
             {error, message}
     end.
 
-% -spec create_p2p_ticket() -> p2p_ticket().
-create_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
+% -spec encode_p2p_ticket() -> p2p_ticket().
+encrypt_p2p_ticket(Key, Timestamp, Lifetime, OtherId, EncKey) ->
     Ticket = <<Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer, Key/binary, OtherId/binary>>,
     IV = keyserver_crypto:generate_iv(),
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, EncKey, IV, {OtherId, Ticket, ?AES_GCM_TAG_SIZE}),
-    <<"p2p-ticket", IV/binary, $:, Tag/binary, $:, Msg/binary>>.
+    Msg = aes_gcm_encrypt(Ticket, EncKey, IV, OtherId),
+    <<?P2P_TICKET, IV/binary, Msg/binary>>.
 
+decrypt_p2p_ticket(<<?P2P_TICKET, IV:?IV_BYTES/binary, Message/binary>>, OtherId, Key) ->
+    case aes_gcm_decrypt(Message, Key, IV, OtherId) of
+	<<Timestamp:64/big-unsigned-integer, Lifetime:16/big-unsigned-integer, TicketKey:?KEY_BYTES/binary, EntityId/binary>> ->
+	    {ticket, EntityId, TicketKey, Timestamp, Lifetime}; 
+        Bin when is_binary(Bin) -> 
+	    {error, ticket_format};
+        error ->
+	    {error, integrity}
+    end.
+    
+p2p_encrypt(MyId, Message, <<?P2P_TICKET, _/binary>> = Ticket, Key, IV) ->
+    case decrypt_p2p_ticket(Ticket, MyId, Key) of
+	{ticket, MyId, TheKey, Timestamp, Lifetime} ->
+	    case Timestamp + Lifetime > keyserver_utils:unix_time() of
+		true -> aes_gcm_encrypt(Message, TheKey, IV, MyId);
+		false -> {error, ticket_expired}
+            end;
+        {ticket, _Id, _Key, _Timestamp, _Lifetime} -> {error, not_ticket_owner};
+	{error, _}=E -> E
+    end.
+    
+p2p_decrypt(MyId, OtherId, Message, <<?P2P_TICKET, _/binary>> = Ticket, Key, IV) ->
+    case decrypt_p2p_ticket(Ticket, MyId, Key) of
+	{ticket, MyId, TheKey, Timestamp, Lifetime} ->
+	    case Timestamp + Lifetime > keyserver_utils:unix_time() of
+		true -> aes_gcm_decrypt(Message, TheKey, IV, OtherId);
+		false -> {error, ticket_expired}
+	    end;
+	{ticket, _Id, _Key, _Timestamp, _Lifetime} -> {error, not_ticket_owner};
+	{error, _}=E -> E
+    end.
 
 encrypt_secure_publish(Message, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
     IV = keyserver_crypto:generate_iv(),
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {KeyId, Message, ?AES_GCM_TAG_SIZE}),
-    <<?V1, ?SECURE_PUBLISH, IV/binary, Msg/binary, Tag/binary>>.
+    Msg = aes_gcm_encrypt(Message, Key, IV, KeyId),
+    <<?V1, ?SECURE_PUBLISH, IV/binary, Msg/binary>>.
 
 decrypt_secure_publish(<<?V1, ?SECURE_PUBLISH, IV:?IV_BYTES/binary, Message/binary>>, KeyId, Key) when size(KeyId) =:= ?KEY_ID_BYTES andalso size(Key) =:= ?KEY_BYTES ->
-    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
-    <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> = Message,
-    case crypto:block_decrypt(aes_gcm, Key, IV, {KeyId, Msg, Tag}) of
+    case  aes_gcm_decrypt(Message, Key, IV, KeyId) of
         Bin when is_binary(Bin) -> {ok, Bin};
         error -> {error, integrity}
     end.
@@ -178,8 +212,7 @@ encrypt_request(Id, Nonce, Request, Key, IV) ->
     EncNonce = encode_nonce(Nonce),
     Message = encode_request(Request),
     M = <<?V1, EncNonce/binary, Message/binary>>,   
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
-    <<Msg/binary, Tag/binary>>.
+    aes_gcm_encrypt(M, Key, IV, Id).
 
 encode_request({direct, OtherId}) ->
     <<?DIRECT, OtherId/binary>>;
@@ -203,44 +236,30 @@ decode_request(_) ->
                              {error, ciphertext} | 
                              {error, cipher_integrity}.
 decrypt_request(Id, Message, Key, IV) ->
-    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
-    case Message of
-        <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> ->
-            case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
-                <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
-                    {ok, decode_nonce(EncNonce), decode_request(Protocol)};
-                error -> 
-                    {error, cipher_integrity};
-                _ ->
-                    {error, plaintext}
-            end;
+    case aes_gcm_decrypt(Message, Key, IV, Id) of
+        <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
+            {ok, decode_nonce(EncNonce), decode_request(Protocol)};
+        error -> 
+            {error, cipher_integrity};
         _ ->
-            {error, ciphertext}
+            {error, plaintext}
     end.
 
 encrypt_response(Id, Nonce, Response, Key, IV) -> 
     EncNonce = encode_nonce(Nonce),
     Message = encode_response(Response),
     M = <<?V1, EncNonce/binary, Message/binary>>,   
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {Id, M, ?AES_GCM_TAG_SIZE}),
-    <<Msg/binary, Tag/binary>>.
+    aes_gcm_encrypt(M, Key, IV, Id).
 
 
 decrypt_response(Id, Message, Key, IV) ->
-    %% TODO: merge with decrypt request.
-    MessageSize = size(Message) - ?AES_GCM_TAG_SIZE,
-    case Message of
-        <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> ->
-            case crypto:block_decrypt(aes_gcm, Key, IV, {Id, Msg, Tag}) of
-                <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
-                    {ok, decode_nonce(EncNonce), decode_response(Protocol)};
-                error -> 
-                    {error, cipher_integrity};
-                _ ->
-                    {error, plaintext}
-            end;
+    case aes_gcm_decrypt(Message, Key, IV, Id) of
+        <<?V1, EncNonce:?NONCE_BYTES/binary, Protocol/binary>> ->
+            {ok, decode_nonce(EncNonce), decode_response(Protocol)};
+        error -> 
+            {error, cipher_integrity};
         _ ->
-            {error, ciphertext}
+            {error, plaintext}
     end.
 
 encode_response({tickets, TicketA, TicketB}) ->
@@ -277,3 +296,12 @@ length_prefix(Bin) when size(Bin) =< 255 ->
 get_length_prefixed_data(<<S:8/unsigned-integer, Rest/binary>>) ->
     <<Data:S/binary, More/binary>> = Rest,
     {Data, More}.
+
+aes_gcm_encrypt(Message, Key, IV, AdditionalData) ->
+    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AdditionalData, Message, ?AES_GCM_TAG_SIZE}),
+    <<Msg/binary, Tag/binary>>.
+
+aes_gcm_decrypt(CipherText, Key, IV, AdditionalData) ->
+    MessageSize = size(CipherText) - ?AES_GCM_TAG_SIZE,
+    <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> = CipherText,
+    crypto:block_decrypt(aes_gcm, Key, IV, {AdditionalData, Msg, Tag}).

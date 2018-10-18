@@ -79,7 +79,13 @@ point_to_point() ->
         keyserver:connect(test, <<"bob">>, BobKey, BobNonce, ServerEncKey),
 
     R = keyserver:p2p_request(test, <<"alice">>, <<"bob">>, AliceNonce1, KeyAliceServer),
-    ?assertMatch({ok, _, {tickets, T1, _T2}}, R),
+    ?assertMatch({ok, _, {tickets, _, _}}, R),
+
+    {ok, _, {tickets, AliceTicket, BobTicket}} = R,
+    IV = keyserver_crypto:generate_iv(),
+    CipherText = keyserver_crypto:p2p_encrypt(<<"alice">>, <<"Hello Bob, this is Alice.">>, AliceTicket, KeyAliceServer, IV),
+    ?assertEqual(<<"Hello Bob, this is Alice.">>,
+                 keyserver_crypto:p2p_decrypt(<<"bob">>, <<"alice">>, CipherText, BobTicket, KeyBobServer, IV)),
 
     ok = keyserver:stop(test).
 
