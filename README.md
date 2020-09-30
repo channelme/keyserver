@@ -5,6 +5,9 @@ Keyserver is a key distribution mechanism for IoT like communicating
 entities. It can be used to exchange keys for direct communication and
 for publish/subscribe communication patterns. 
 
+A javascript library which is able to interact with this keyserver can
+be found in the [Cotonic](https://cotonic.org) library.
+
 Usage
 -----
 
