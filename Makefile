@@ -4,6 +4,8 @@ DIALYZER = dialyzer
 REBAR := $(shell which rebar3 2>/dev/null || echo ./rebar3)
 REBAR_URL := https://s3.amazonaws.com/rebar3/rebar3
 
+.PHONY: all compile check test clean dialyzer xref
+
 all: compile
 
 ./rebar3:
@@ -24,13 +26,16 @@ clean: rebar3
 distclean: 
 	rm $(REBAR)
 
+xref:
+	$(REBAR) xref
+
 # dializer 
 
 build-plt:
 	@$(DIALYZER) --build_plt --output_plt .$(PROJECT).plt \
 		--apps kernel stdlib 
 
-dialyze:
+dialyzer:
 	@$(DIALYZER) --src src --plt .$(PROJECT).plt --no_native \
 		-Werror_handling -Wrace_conditions -Wunmatched_returns -Wunderspecs
 

@@ -300,10 +300,12 @@ get_length_prefixed_data(<<S:8/unsigned-integer, Rest/binary>>) ->
 % Encryption and decryption uses the convention used in javascript
 % subtle crypto to append the tag to the ciphertext.
 aes_gcm_encrypt(Message, Key, IV, AdditionalData) ->
-    {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AdditionalData, Message, ?AES_GCM_TAG_SIZE}),
+    {Msg, Tag} = crypto:crypto_one_time_aead(aes_gcm, Key, IV, Message, AdditionalData, ?AES_GCM_TAG_SIZE, true),
+    % {Msg, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, {AdditionalData, Message, ?AES_GCM_TAG_SIZE}),
     <<Msg/binary, Tag/binary>>.
 
 aes_gcm_decrypt(CipherText, Key, IV, AdditionalData) ->
     MessageSize = size(CipherText) - ?AES_GCM_TAG_SIZE,
     <<Msg:MessageSize/binary, Tag:?AES_GCM_TAG_SIZE/binary>> = CipherText,
-    crypto:block_decrypt(aes_gcm, Key, IV, {AdditionalData, Msg, Tag}).
+    crypto:crypto_one_time_aead(aes_gcm, Key, IV, Msg, AdditionalData, Tag, false).
+    % crypto:block_decrypt(aes_gcm, Key, IV, {AdditionalData, Msg, Tag}).

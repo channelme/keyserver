@@ -1,4 +1,17 @@
-[{<<"zotonic_stdlib">>,
-  {git,"git://github.com/zotonic/z_stdlib.git",
-       {ref,"6d3ff66260b0d195bc8e89774809fe3fadb8a9d7"}},
-  0}].
+{"1.2.0",
+[{<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.11.0">>},1},
+ {<<"ssl_verify_fun">>,{pkg,<<"ssl_verify_fun">>,<<"1.1.6">>},2},
+ {<<"tls_certificate_check">>,{pkg,<<"tls_certificate_check">>,<<"1.6.0">>},1},
+ {<<"zotonic_stdlib">>,{pkg,<<"zotonic_stdlib">>,<<"1.4.0">>},0}]}.
+[
+{pkg_hash,[
+ {<<"cowlib">>, <<"0B9FF9C346629256C42EBE1EEB769A83C6CB771A6EE5960BD110AB0B9B872063">>},
+ {<<"ssl_verify_fun">>, <<"CF344F5692C82D2CD7554F5EC8FD961548D4FD09E7D22F5B62482E5AEAEBD4B0">>},
+ {<<"tls_certificate_check">>, <<"661C287FC3F7823F6A299834664A5932AC9D369BEFEC2883172DE0623A4AEA12">>},
+ {<<"zotonic_stdlib">>, <<"5C62C6D166E0A226D752F182910742BB3FB439AB7300BAD78D127C00C3EF9C53">>}]},
+{pkg_hash_ext,[
+ {<<"cowlib">>, <<"2B3E9DA0B21C4565751A6D4901C20D1B4CC25CBB7FD50D91D2AB6DD287BC86A9">>},
+ {<<"ssl_verify_fun">>, <<"BDB0D2471F453C88FF3908E7686F86F9BE327D065CC1EC16FA4540197EA04680">>},
+ {<<"tls_certificate_check">>, <<"42476E2E40717F09FBF1B559A8A6975B394E46C94BB5EBB043A18269A46401C0">>},
+ {<<"zotonic_stdlib">>, <<"0BBFDCA58B1D178B64F1F84CF062252B5938E396AC4DFDC55DB280ED276D6FD1">>}]}
+].
