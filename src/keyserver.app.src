@@ -1,7 +1,7 @@
 {application, keyserver,
  [
   {description, "Key Server which can be used to encrypt and authenticate participants."},
-  {vsn, "0.0.1"},
+  {vsn, git},
   {mod, {keyserver_app, []}},
   {modules, [keyserver, keyserver_app, keysever_app_sup, keyserver_sup, keyserver_server]},
   {registered, []},
@@ -9,5 +9,7 @@
                   kernel,
                   stdlib
                  ]},
-  {env, []}
+  {env, []},
+  {licenses,["Apache 2.0"]},
+  {links,[{"GitHub", "https://github.com/channelme/keyserver"}]}
  ]}.
