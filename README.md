@@ -8,6 +8,11 @@ for publish/subscribe communication patterns.
 A javascript library which is able to interact with this keyserver can
 be found in the [Cotonic](https://cotonic.org) library.
 
+Notification
+------------
+
+Development moved to https://github.com/zotonic/keyserver
+
 Usage
 -----
 
